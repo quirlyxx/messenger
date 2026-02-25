@@ -14,12 +14,12 @@ namespace Server.Network
         private readonly AuthService _authService = new AuthService();
         private bool _isRunning = false;
 
-        public async Task StartAsync(string ip, int port)
+        public async Task StartAsync(int port)
         {
-            _listener = new TcpListener(IPAddress.Parse(ip), port);
+            _listener = new TcpListener(IPAddress.Any, port);
             _listener.Start();
             _isRunning = true;
-            Logger.Log($"Server started on {ip}:{port}", Logger.LogLevel.Success);
+            Logger.Log($"Server started on 0.0.0.0:{port}", Logger.LogLevel.Success);
 
             _ = Task.Run(() =>
             {

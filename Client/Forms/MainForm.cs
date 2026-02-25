@@ -1,11 +1,13 @@
-﻿using System;
-using System.Windows.Forms;
-using Client.Core;
+﻿using Client.Core;
+using Client.Network;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Client.Network;
-using System.IO;
-using System.Diagnostics;
+using System.Windows.Forms;
+using System.Xml.Linq;
 
 
 namespace Client.Forms
@@ -14,10 +16,23 @@ namespace Client.Forms
     {
         private readonly NetworkClient _client;
         private readonly string _login;
+        private List<ContactViewDto> _contactsCache = new();
 
         public MainForm(NetworkClient client, string login)
         {
+            
             InitializeComponent();
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.WindowState = FormWindowState.Normal;
+            this.ShowInTaskbar = true;
+
+            this.BringToFront();
+            this.Activate();
+            this.TopMost = true;
+            this.TopMost = false;
+            lstContacts.DrawMode = DrawMode.OwnerDrawVariable;
+            lstContacts.MeasureItem += LstContacts_MeasureItem;
+            lstContacts.DrawItem += LstContacts_DrawItem;
             _client = client;
             _login = login;
             lblCurrentUser.Text = $"Current User: {login}";
@@ -29,6 +44,39 @@ namespace Client.Forms
         {
             await _client.SendAsync(new NetworkPacket { Action = "GetContacts" });
             await _client.SendAsync(new NetworkPacket { Action = "GetRequests" });
+            await _client.SendAsync(new NetworkPacket { Action = "GetProfile" });
+        }
+
+        private void LstContacts_MeasureItem(object? sender, MeasureItemEventArgs e)
+        {
+            e.ItemHeight = 42;
+        }
+
+        private void LstContacts_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index < 0 || e.Index >= lstContacts.Items.Count) return;
+
+            var item = (ContactViewDto)lstContacts.Items[e.Index];
+
+            var isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var bg = isSelected ? SystemColors.Highlight : lstContacts.BackColor;
+            var fg1 = isSelected ? SystemColors.HighlightText : lstContacts.ForeColor;
+            var fg2 = isSelected ? SystemColors.HighlightText : Color.Gray;
+
+            using var bgBrush = new SolidBrush(bg);
+            e.Graphics.FillRectangle(bgBrush, e.Bounds);
+
+            var nameFont = new Font(e.Font, FontStyle.Regular);
+            var loginFont = new Font(e.Font.FontFamily, e.Font.Size - 1, FontStyle.Regular);
+
+            var x = e.Bounds.Left + 8;
+            var y = e.Bounds.Top + 4;
+
+            e.Graphics.DrawString(item.DisplayName, nameFont, new SolidBrush(fg1), x, y);
+            e.Graphics.DrawString($"@{item.Login}", loginFont, new SolidBrush(fg2), x, y + 18);
+
+            e.DrawFocusRectangle();
         }
 
 
@@ -42,19 +90,19 @@ namespace Client.Forms
 
             switch (packet.Action)
             {
+                
                 case "ReceiveMessage":
-                    var msg = JsonSerializer.Deserialize<ChatMessage>(packet.Data);
-                    if (msg != null)
-                        lstMessage.Items.Add($"{msg.Time:HH:mm} {msg.From}: {msg.Text}");
-                    break;
+                    {
+                        var msg = JsonSerializer.Deserialize<ChatMessage>(packet.Data);
+                        if (msg != null)
+                        {
+                            var name = ResolveSenderName(msg.FromLogin, msg.FromName);
+                            lstMessage.Items.Add($"{msg.Time:HH:mm} {name}: {msg.Text}");
+                        }
+                        break;
+                    }
 
-                case "ContactsList":
-                    var contacts = JsonSerializer.Deserialize<List<string>>(packet.Data);
-                    lstContacts.Items.Clear();
-                    if (contacts != null)
-                        foreach (var c in contacts)
-                            lstContacts.Items.Add(c);
-                    break;
+
 
                 case "RequestsList":
                     var requests = JsonSerializer.Deserialize<List<string>>(packet.Data);
@@ -89,12 +137,12 @@ namespace Client.Forms
                     break;
                 case "ReceiveFile":
                     var fileMsg = JsonSerializer.Deserialize<FileMessage>(packet.Data);
-                    if(fileMsg == null) break;
+                    if (fileMsg == null) break;
                     var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "MessengerFiles");
                     Directory.CreateDirectory(directory);
 
-                    var safeName = $"{fileMsg.Time:yyyyMMdd_HHmmss}_{fileMsg.From}_{fileMsg.FileName}";
-                    foreach(var c in Path.GetInvalidFileNameChars())
+                    var safeName = $"{fileMsg.Time:yyyyMMdd_HHmmss}_{fileMsg.FromName}_{fileMsg.FileName}";
+                    foreach (var c in Path.GetInvalidFileNameChars())
                     {
                         safeName = safeName.Replace(c, '_');
                     }
@@ -104,15 +152,15 @@ namespace Client.Forms
                     var bytes = Convert.FromBase64String(fileMsg.Base64);
                     File.WriteAllBytes(savePath, bytes);
 
-                    lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {fileMsg.From}: [File: {fileMsg.FileName}] saved → {savePath}");
+                    lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {fileMsg.FromName}: [File: {fileMsg.FileName}] saved → {savePath}");
 
-                    Logger.Log($"Received file from {fileMsg.From}: {fileMsg.FileName} saved to {savePath}", Logger.LogLevel.Success);
+                    Logger.Log($"Received file from {fileMsg.FromName}: {fileMsg.FileName} saved to {savePath}", Logger.LogLevel.Success);
 
-                    var result = MessageBox.Show($"Received file '{fileMsg.FileName}' from {fileMsg.From}. Do you want to open it?", "File Received", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                    if(result == DialogResult.Yes)
+                    var result = MessageBox.Show($"Received file '{fileMsg.FileName}' from {fileMsg.FromName}. Do you want to open it?", "File Received", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (result == DialogResult.Yes)
                     {
                         try { Process.Start(new ProcessStartInfo(savePath) { UseShellExecute = true }); }
-                        
+
                         catch { }
                     }
                     break;
@@ -122,7 +170,51 @@ namespace Client.Forms
                     else if (packet.Data == "TOO_LARGE") MessageBox.Show("File too large.");
                     else MessageBox.Show("File send failed.");
                     break;
+                case "SendMessageResult":
+                    if (packet.Data == "USER_OFFLINE")
+                        MessageBox.Show("User is offline.");
+                    break;
+                case "Profile":
+                    var profile = JsonSerializer.Deserialize<ProfileDto>(packet.Data);
+                    if (profile != null)
+                    {
+                        lblCurrentUser.Text = $"Current User: {profile.UserName} (@{profile.Login})";
+                        txtMyNick.Text = profile.UserName;
+                    }
+                    break;
+                case "ContactsList":
+                    var contacts = JsonSerializer.Deserialize<List<ContactViewDto>>(packet.Data);
+                    _contactsCache = contacts ?? new List<ContactViewDto>();
+
+                    lstContacts.Items.Clear();
+                    foreach (var c in _contactsCache)
+                        lstContacts.Items.Add(c);
+
+                    break;
+                case "UpdateAliasResult":
+                    if (packet.Data != "OK") MessageBox.Show("Rename Failed.");
+                    Logger.Log($"Alias update result: {packet.Data}", Logger.LogLevel.Info);
+                    break;
+                case "UpdateProfileResult":
+                    if (packet.Data == "OK") MessageBox.Show("Nickname updated!");
+                    else MessageBox.Show("Nickname update failed.");
+                    break;
             }
+        }
+
+        private string ResolveSenderName(string fromLogin, string fallbackName)
+        {
+            var key = (fromLogin ?? "").Trim().ToLowerInvariant();
+
+            var c = _contactsCache.FirstOrDefault(x =>
+       (x.Login ?? "").Trim().ToLowerInvariant() == key);
+
+            // Если ты переименовал контакт (alias) — показываем alias
+            if (c != null && !string.IsNullOrWhiteSpace(c.Alias))
+                return c.Alias;
+
+            // иначе показываем его ник (FromName), который прислал сервер
+            return string.IsNullOrWhiteSpace(fallbackName) ? fromLogin : fallbackName;
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
@@ -134,8 +226,8 @@ namespace Client.Forms
             }
 
             var to = txtTo.Text.Trim();
-            if (string.IsNullOrWhiteSpace(to) && lstContacts.SelectedItem != null)
-                to = lstContacts.SelectedItem.ToString()!.Trim();
+            if (string.IsNullOrWhiteSpace(to) && lstContacts.SelectedItem is ContactViewDto c)
+                to = c.Login;
 
             var text = txtMessage.Text.Trim();
 
@@ -153,7 +245,7 @@ namespace Client.Forms
 
             var message = new ChatMessage
             {
-                From = _login,
+                FromLogin = _login,
                 To = to,
                 Text = text,
                 Time = DateTime.Now
@@ -165,7 +257,7 @@ namespace Client.Forms
                 Data = JsonSerializer.Serialize(message)
             });
 
-            lstMessage.Items.Add($"[{message.Time:HH:mm}] {to}: {text}");
+            lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
             txtMessage.Clear();
 
             Logger.Log($"Sent message to {to}: {text}", Logger.LogLevel.Message);
@@ -211,7 +303,7 @@ namespace Client.Forms
 
             var packet = new NetworkPacket
             {
-                Action = "DeclineContact", 
+                Action = "DeclineContact",
                 Data = lstRequests.SelectedItem.ToString()
             };
 
@@ -222,12 +314,12 @@ namespace Client.Forms
 
         private async void btnRemoveContact_Click(object sender, EventArgs e)
         {
-            if (lstContacts.SelectedItem == null) return;
+            if (lstContacts.SelectedItem is not ContactViewDto c) return;
 
             await _client.SendAsync(new NetworkPacket
             {
                 Action = "RemoveContact",
-                Data = lstContacts.SelectedItem.ToString()
+                Data = c.Login
             });
 
             await _client.SendAsync(new NetworkPacket { Action = "GetContacts" });
@@ -235,8 +327,11 @@ namespace Client.Forms
 
         private void lstContacts_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (lstContacts.SelectedItem != null)
-                txtTo.Text = lstContacts.SelectedItem.ToString();
+            if (lstContacts.SelectedItem is ContactViewDto c)
+            {
+                txtTo.Text = c.Login;
+                txtAlias.Text = c.Alias ?? "";
+            }
         }
 
         private async void btnLogout_Click(object sender, EventArgs e)
@@ -256,10 +351,6 @@ namespace Client.Forms
             finally
             {
                 _client.Disconnect();
-
-                var loginForm = new LoginForm();
-                loginForm.Show();
-
                 this.Close();
             }
         }
@@ -288,8 +379,8 @@ namespace Client.Forms
             }
 
             var to = txtTo.Text.Trim();
-            if (string.IsNullOrWhiteSpace(to) && lstContacts.SelectedItem != null)
-                to = lstContacts.SelectedItem.ToString()!.Trim();
+            if (string.IsNullOrWhiteSpace(to) && lstContacts.SelectedItem is ContactViewDto c)
+                to = c.Login;
 
             if (string.IsNullOrWhiteSpace(to))
             {
@@ -306,7 +397,7 @@ namespace Client.Forms
             var path = ofd.FileName;
             var bytes = File.ReadAllBytes(path);
 
-            if(bytes.Length > 10 * 1024 * 1024)
+            if (bytes.Length > 10 * 1024 * 1024)
             {
                 MessageBox.Show("File is too large (max 10 MB).");
                 return;
@@ -314,7 +405,7 @@ namespace Client.Forms
 
             var fileMsg = new FileMessage
             {
-                From = _login,
+                FromName = _login,
                 To = to,
                 FileName = Path.GetFileName(path),
                 ContentType = "application/octet-stream",
@@ -331,6 +422,41 @@ namespace Client.Forms
 
             lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {to}: [File: {fileMsg.FileName} ({fileMsg.SizeBytes / 1024} KB)]");
             Logger.Log($"Sent file to {to}: {fileMsg.FileName} ({fileMsg.SizeBytes} bytes)", Logger.LogLevel.Message);
+        }
+
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            Application.Exit();
+        }
+
+        private async void btnRenameContact_Click(object sender, EventArgs e)
+        {
+            if (lstContacts.SelectedItem is not Client.Core.ContactViewDto c) return;
+
+            var alias = txtAlias.Text.Trim();
+
+            var packet = new NetworkPacket
+            {
+                Action = "UpdateContactAlias",
+                Data = JsonSerializer.Serialize(new { ContactLogin = c.Login, Alias = alias })
+            };
+
+            await _client.SendAsync(packet);
+        }
+
+        private async void btnSaveMyNick_Click(object sender, EventArgs e)
+        {
+            var nick = txtMyNick.Text.Trim();
+            if (string.IsNullOrWhiteSpace(nick))
+            {
+                MessageBox.Show("Nickname cannot be empty.");
+                return;
+            }
+
+            await _client.SendAsync(new NetworkPacket {
+                Action = "UpdateProfileName",
+                Data = JsonSerializer.Serialize(new { UserName = nick })
+            });
         }
     }
 }

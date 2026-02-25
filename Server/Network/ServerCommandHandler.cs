@@ -5,7 +5,9 @@ using System.Collections.Generic;
 
 public class ServerCommandHandler
 {
-    private readonly HashSet<string> _bannedUsers = new();
+
+    public static readonly HashSet<string> BannedUsers = new();
+    private static string Norm(string s) => (s ?? "").Trim().ToLowerInvariant();
     public void Start()
     {
         Logger.Log("Command console started. Type '/help' for commands.", Logger.LogLevel.Info);
@@ -35,20 +37,11 @@ public class ServerCommandHandler
                     break;
 
                 case "/ban":
-                    if (parts.Length < 2)
-                    {
-                        Logger.Log("Usage: ban <login>", Logger.LogLevel.Warning);
-                        break;
-                    }
-                    var loginToBan = parts[1];
+                    var loginToBan = Norm(parts[1]);
+                    BannedUsers.Add(loginToBan);
                     if (ClientHandler.ConnectedClients.TryGetValue(loginToBan, out var handler))
-                    {
                         handler.Disconnect();
-                        Logger.Log($"User {loginToBan} has been banned and disconnected.", Logger.LogLevel.Warning);
-                        _bannedUsers.Add(loginToBan);
-                    }
-                    else
-                        Logger.Log($"User {loginToBan} not found.", Logger.LogLevel.Warning);
+                    Logger.Log($"User {loginToBan} has been banned.", Logger.LogLevel.Warning);
                     break;
 
                 case "/msg":
@@ -95,5 +88,5 @@ public class ServerCommandHandler
         }
     }
 
-    public bool IsBanned(string login) => _bannedUsers.Contains(login);
+    public bool IsBanned(string login) => BannedUsers.Contains(login);
 }

@@ -44,8 +44,14 @@
             btnLogout = new Button();
             label2 = new Label();
             groupBox1 = new GroupBox();
+            btnRenameContact = new Button();
+            txtAlias = new TextBox();
+            label4 = new Label();
             groupBox2 = new GroupBox();
             btnSendFile = new Button();
+            txtMyNick = new TextBox();
+            label3 = new Label();
+            btnSaveMyNick = new Button();
             groupBox1.SuspendLayout();
             groupBox2.SuspendLayout();
             SuspendLayout();
@@ -124,7 +130,7 @@
             lstContacts.ForeColor = Color.FromArgb(233, 254, 254);
             lstContacts.FormattingEnabled = true;
             lstContacts.Location = new Point(6, 26);
-            lstContacts.MultiColumn = true;
+            lstContacts.MultiColumn = false;
             lstContacts.Name = "lstContacts";
             lstContacts.Size = new Size(219, 268);
             lstContacts.TabIndex = 6;
@@ -136,7 +142,7 @@
             lstRequests.Font = new Font("Times New Roman", 12F);
             lstRequests.ForeColor = Color.FromArgb(233, 254, 254);
             lstRequests.FormattingEnabled = true;
-            lstRequests.Location = new Point(6, 341);
+            lstRequests.Location = new Point(6, 482);
             lstRequests.MultiColumn = true;
             lstRequests.Name = "lstRequests";
             lstRequests.Size = new Size(219, 92);
@@ -170,7 +176,7 @@
             btnAccept.BackColor = Color.SteelBlue;
             btnAccept.Font = new Font("Times New Roman", 12F);
             btnAccept.ForeColor = SystemColors.GradientInactiveCaption;
-            btnAccept.Location = new Point(231, 337);
+            btnAccept.Location = new Point(231, 482);
             btnAccept.Name = "btnAccept";
             btnAccept.Size = new Size(135, 35);
             btnAccept.TabIndex = 10;
@@ -183,7 +189,7 @@
             btnDecline.BackColor = Color.SteelBlue;
             btnDecline.Font = new Font("Times New Roman", 12F);
             btnDecline.ForeColor = SystemColors.GradientInactiveCaption;
-            btnDecline.Location = new Point(231, 378);
+            btnDecline.Location = new Point(231, 523);
             btnDecline.Name = "btnDecline";
             btnDecline.Size = new Size(135, 35);
             btnDecline.TabIndex = 11;
@@ -196,7 +202,7 @@
             btnRemoveContact.BackColor = Color.SteelBlue;
             btnRemoveContact.Font = new Font("Times New Roman", 12F);
             btnRemoveContact.ForeColor = SystemColors.GradientInactiveCaption;
-            btnRemoveContact.Location = new Point(231, 114);
+            btnRemoveContact.Location = new Point(231, 155);
             btnRemoveContact.Name = "btnRemoveContact";
             btnRemoveContact.Size = new Size(135, 35);
             btnRemoveContact.TabIndex = 12;
@@ -222,7 +228,7 @@
             label2.AutoSize = true;
             label2.Font = new Font("Times New Roman", 10.8F);
             label2.ForeColor = Color.FromArgb(233, 254, 254);
-            label2.Location = new Point(6, 316);
+            label2.Location = new Point(6, 459);
             label2.Name = "label2";
             label2.Size = new Size(135, 20);
             label2.TabIndex = 14;
@@ -230,6 +236,9 @@
             // 
             // groupBox1
             // 
+            groupBox1.Controls.Add(btnRenameContact);
+            groupBox1.Controls.Add(txtAlias);
+            groupBox1.Controls.Add(label4);
             groupBox1.Controls.Add(lstContacts);
             groupBox1.Controls.Add(label2);
             groupBox1.Controls.Add(btnRemoveContact);
@@ -241,10 +250,41 @@
             groupBox1.ForeColor = SystemColors.ActiveCaption;
             groupBox1.Location = new Point(12, 12);
             groupBox1.Name = "groupBox1";
-            groupBox1.Size = new Size(381, 458);
+            groupBox1.Size = new Size(381, 580);
             groupBox1.TabIndex = 15;
             groupBox1.TabStop = false;
             groupBox1.Text = "Contacts";
+            // 
+            // btnRenameContact
+            // 
+            btnRenameContact.BackColor = Color.SteelBlue;
+            btnRenameContact.Font = new Font("Times New Roman", 12F);
+            btnRenameContact.ForeColor = SystemColors.GradientInactiveCaption;
+            btnRenameContact.Location = new Point(231, 114);
+            btnRenameContact.Name = "btnRenameContact";
+            btnRenameContact.Size = new Size(135, 35);
+            btnRenameContact.TabIndex = 17;
+            btnRenameContact.Text = "Rename Contact";
+            btnRenameContact.UseVisualStyleBackColor = false;
+            btnRenameContact.Click += btnRenameContact_Click;
+            // 
+            // txtAlias
+            // 
+            txtAlias.Location = new Point(6, 320);
+            txtAlias.Name = "txtAlias";
+            txtAlias.Size = new Size(125, 27);
+            txtAlias.TabIndex = 16;
+            // 
+            // label4
+            // 
+            label4.AutoSize = true;
+            label4.Font = new Font("Times New Roman", 10.8F);
+            label4.ForeColor = Color.FromArgb(233, 254, 254);
+            label4.Location = new Point(6, 297);
+            label4.Name = "label4";
+            label4.Size = new Size(44, 20);
+            label4.TabIndex = 15;
+            label4.Text = "Alias";
             // 
             // groupBox2
             // 
@@ -275,18 +315,53 @@
             btnSendFile.UseVisualStyleBackColor = false;
             btnSendFile.Click += btnSendFile_Click;
             // 
+            // txtMyNick
+            // 
+            txtMyNick.Location = new Point(1067, 109);
+            txtMyNick.Name = "txtMyNick";
+            txtMyNick.Size = new Size(125, 27);
+            txtMyNick.TabIndex = 17;
+            // 
+            // label3
+            // 
+            label3.AutoSize = true;
+            label3.Font = new Font("Times New Roman", 10.8F);
+            label3.ForeColor = Color.FromArgb(233, 254, 254);
+            label3.Location = new Point(1067, 85);
+            label3.Name = "label3";
+            label3.Size = new Size(86, 20);
+            label3.TabIndex = 18;
+            label3.Text = "Nickname:";
+            // 
+            // btnSaveMyNick
+            // 
+            btnSaveMyNick.BackColor = Color.SteelBlue;
+            btnSaveMyNick.Font = new Font("Times New Roman", 12F);
+            btnSaveMyNick.ForeColor = SystemColors.GradientInactiveCaption;
+            btnSaveMyNick.Location = new Point(1067, 142);
+            btnSaveMyNick.Name = "btnSaveMyNick";
+            btnSaveMyNick.Size = new Size(126, 40);
+            btnSaveMyNick.TabIndex = 19;
+            btnSaveMyNick.Text = "Save";
+            btnSaveMyNick.UseVisualStyleBackColor = false;
+            btnSaveMyNick.Click += btnSaveMyNick_Click;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(15, 23, 42);
-            ClientSize = new Size(1204, 492);
+            ClientSize = new Size(1204, 604);
+            Controls.Add(btnSaveMyNick);
+            Controls.Add(label3);
+            Controls.Add(txtMyNick);
             Controls.Add(groupBox2);
             Controls.Add(groupBox1);
             Controls.Add(btnLogout);
             Controls.Add(lblCurrentUser);
             Name = "MainForm";
             Text = "MainForm";
+            FormClosing += MainForm_FormClosing;
             groupBox1.ResumeLayout(false);
             groupBox1.PerformLayout();
             groupBox2.ResumeLayout(false);
@@ -315,5 +390,11 @@
         private GroupBox groupBox1;
         private GroupBox groupBox2;
         private Button btnSendFile;
+        private TextBox txtMyNick;
+        private Label label3;
+        private Button btnRenameContact;
+        private TextBox txtAlias;
+        private Label label4;
+        private Button btnSaveMyNick;
     }
 }

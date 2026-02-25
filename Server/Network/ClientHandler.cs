@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Server.Core;
@@ -43,8 +44,8 @@ namespace Server.Network
             try
             {
                 var stream = _client.GetStream();
-                _reader = new StreamReader(stream);
-                _writer = new StreamWriter(stream) { AutoFlush = true };
+                _reader = new StreamReader(stream, Encoding.UTF8);
+                _writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
 
                 while (true)
                 {
@@ -88,7 +89,89 @@ namespace Server.Network
                 case "DeclineContact": await HandleDeclineRequest(packet.Data); break;
                 case "Logout": await HandleLogoutAsync(); break;
                 case "SendFile": await HandleSendFileAsync(packet.Data); break;
+                case "UpdateProfileName": await HandleUpdateProfileNameAsync(packet.Data); break;
+                case "UpdateContactAlias": await HandleUpdateContactAliasAsync(packet.Data); break;
+                case "GetProfile": await HandleGetProfileAsync(); break;
 
+            }
+        }
+
+        private async Task HandleGetProfileAsync()
+        {
+            if(_currentUser == null)  return;
+            
+            var user = _authService.GetUser(_currentUser);
+            if(user == null) return;
+
+            await SendAsync(new NetworkPacket
+            {
+                Action = "Profile",
+                Data = JsonSerializer.Serialize(new { Login = user.Login, UserName = user.UserName })
+            });
+        }
+
+        private async Task HandleUpdateProfileNameAsync(string? data)
+        {
+            if (_currentUser == null || data == null) return;
+
+            var dto = JsonSerializer.Deserialize<UpdateProfileDto>(data);
+            if (dto == null) return;
+
+            var success = _authService.UpdateUserName(_currentUser, dto.UserName);
+
+            await SendAsync(new NetworkPacket
+            {
+                Action = "UpdateProfileResult",
+                Data = success ? "OK" : "FAIL"
+            });
+
+            if (!success) return;
+
+            // Обновляем профиль себе
+            await HandleGetProfileAsync();
+            await HandleGetContacts();
+
+            // 🔥 ВАЖНО: уведомляем всех онлайн-контактов
+            var myContacts = _authService.GetContacts(_currentUser);
+
+            foreach (var contact in myContacts)
+            {
+                ClientHandler? handler;
+
+                lock (_lock)
+                {
+                    _connectedClients.TryGetValue(contact.Login, out handler);
+                }
+
+                if (handler != null)
+                {
+                    await handler.SendAsync(new NetworkPacket
+                    {
+                        Action = "ContactsList",
+                        Data = JsonSerializer.Serialize(
+                            _authService.GetContactView(contact.Login)
+                        )
+                    });
+                }
+            }
+
+            Logger.Log($"{_currentUser} updated profile name to {dto.UserName}",
+                Logger.LogLevel.Success);
+        }
+
+        private async Task HandleUpdateContactAliasAsync(string? data)
+        {
+            if (_currentUser == null || data == null) return;
+
+            var dto = JsonSerializer.Deserialize<UpdateAliasDto>(data);
+            if (dto == null) return;
+
+            var success = _authService.UpdateContactAlias(_currentUser, dto.ContactLogin, dto.Alias);
+            await SendAsync(new NetworkPacket { Action = "UpdateAliasResult", Data = success ? "OK" : "FAIL" });
+
+            if (success)
+            {
+                await HandleGetContacts();
             }
         }
 
@@ -170,7 +253,7 @@ namespace Server.Network
         {
             if (_currentUser == null || data == null) return;
 
-            var login = data;
+            var login = data.Trim().ToLowerInvariant();
             var result = _authService.SendContactRequest(_currentUser, login);
 
             await SendAsync(new NetworkPacket
@@ -202,7 +285,7 @@ namespace Server.Network
         }
         private async Task HandleAcceptRequest(string? data)
         {
-            
+
             if (_currentUser == null || data == null) return;
 
             var result = _authService.AcceptContactRequest(_currentUser, data);
@@ -211,7 +294,7 @@ namespace Server.Network
                 await SendAsync(new NetworkPacket
                 {
                     Action = "ContactsList",
-                    Data = JsonSerializer.Serialize(_authService.GetContacts(_currentUser))
+                    Data = JsonSerializer.Serialize(_authService.GetContactView(_currentUser))
                 });
 
                 await SendAsync(new NetworkPacket
@@ -228,7 +311,7 @@ namespace Server.Network
                     await senderHandler.SendAsync(new NetworkPacket
                     {
                         Action = "ContactsList",
-                        Data = JsonSerializer.Serialize(_authService.GetContacts(data))
+                        Data = JsonSerializer.Serialize(_authService.GetContactView(data))
                     });
                 }
             }
@@ -280,7 +363,7 @@ namespace Server.Network
         {
             if (_currentUser == null) return;
 
-            var contacts = _authService.GetContacts(_currentUser);
+            var contacts = _authService.GetContactView(_currentUser);
 
             await SendAsync(new NetworkPacket
             {
@@ -324,6 +407,13 @@ namespace Server.Network
             if (data == null) return;
             var creds = JsonSerializer.Deserialize<LoginDto>(data);
             if (creds == null) return;
+            var loginNormalized = creds.Login.Trim().ToLowerInvariant();
+            if (ServerCommandHandler.BannedUsers.Contains(loginNormalized))
+            {
+                await SendAsync(new NetworkPacket { Action = "LoginResult", Data = "BANNED" });
+                try { _client.Close(); } catch { }
+                return;
+            }
             var user = _authService.Login(creds.Login, creds.Password);
             if (user != null)
             {
@@ -357,17 +447,35 @@ namespace Server.Network
         private async Task HandleSendMessageAsync(string? data)
         {
             if (data == null || _currentUser == null) return;
+
             var msg = JsonSerializer.Deserialize<ChatMessage>(data);
             if (msg == null) return;
-            msg.From = _currentUser;
+
+            // кто отправитель
+            var sender = _authService.GetUser(_currentUser);
+            var senderName = sender?.UserName ?? _currentUser;
+
+            msg.FromLogin = _currentUser;
+            msg.FromName = senderName;
             msg.Time = DateTime.Now;
 
             ClientHandler? target;
-            lock (_lock) { _connectedClients.TryGetValue(msg.To, out target); }
+            var toKey = msg.To.Trim().ToLowerInvariant();
+            lock (_lock) { _connectedClients.TryGetValue(toKey, out target); }
+
             if (target != null)
             {
-                await target.SendAsync(new NetworkPacket { Action = "ReceiveMessage", Data = JsonSerializer.Serialize(msg) });
-                Logger.Log($"Message from {msg.From} to {msg.To}: {msg.Text}", Logger.LogLevel.Message);
+                await target.SendAsync(new NetworkPacket
+                {
+                    Action = "ReceiveMessage",
+                    Data = JsonSerializer.Serialize(msg)
+                });
+
+                await SendAsync(new NetworkPacket { Action = "SendMessageResult", Data = "OK" });
+            }
+            else
+            {
+                await SendAsync(new NetworkPacket { Action = "SendMessageResult", Data = "USER_OFFLINE" });
             }
         }
 
@@ -386,7 +494,7 @@ namespace Server.Network
                 Action = "ReceiveMessage",
                 Data = JsonSerializer.Serialize(new ChatMessage
                 {
-                    From = "SYSTEM",
+                    FromLogin = "SYSTEM",
                     To = _currentUser,
                     Text = text,
                     Time = DateTime.Now
@@ -400,5 +508,16 @@ namespace Server.Network
     {
         public string Login { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+    }
+
+    public class UpdateProfileDto
+    {
+        public string UserName { get; set; } = string.Empty;
+    }
+
+    public class UpdateAliasDto
+    {
+        public string ContactLogin { get; set; } = string.Empty;
+        public string Alias { get; set; } = string.Empty;
     }
 }

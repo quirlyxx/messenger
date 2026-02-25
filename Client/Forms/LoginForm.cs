@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.Eventing.Reader;
 using System.Text.Json;
 using System.Windows.Forms;
 using Client.Core;
@@ -8,6 +9,7 @@ namespace Client.Forms
 {
     public partial class LoginForm : Form
     {
+        public event Action<NetworkClient, string>? LoginSucceeded;
         private readonly NetworkClient _client = new NetworkClient();
 
         public LoginForm()
@@ -31,47 +33,49 @@ namespace Client.Forms
 
         private void HandlePacket(NetworkPacket packet)
         {
-            if (packet.Action == "RegisterResult")
+            this.Invoke(() =>
             {
-                this.Invoke(() =>
+                switch (packet.Action)
                 {
-                    if (packet.Data == "OK")
-                    {
-                        MessageBox.Show("Registration successful!");
-                        Logger.Log("Registration successful", Logger.LogLevel.Success);
-                    }
-                    else if (packet.Data == "EXISTS")
-                    {
-                        MessageBox.Show("User already exists.");
-                        Logger.Log("Registration failed: user exists", Logger.LogLevel.Warning);
-                    }
-                    else
-                    {
-                        MessageBox.Show("Registration failed.");
-                        Logger.Log($"Unknown registration response: {packet.Data}", Logger.LogLevel.Error);
-                    }
-                });
-            }
-            else if (packet.Action == "LoginResult")
-            {
-                this.Invoke(() =>
-                {
-                    if (packet.Data == "OK")
-                    {
-                        MessageBox.Show("Login successful!");
-                        Logger.Log("Login successful", Logger.LogLevel.Success);
+                    case "RegisterResult":
+                        if (packet.Data == "OK")
+                        {
+                            MessageBox.Show("Registration successful!");
+                            Logger.Log("Registration successful", Logger.LogLevel.Success);
+                        }
+                        else if (packet.Data == "EXISTS")
+                        {
+                            MessageBox.Show("User already exists.");
+                        }
+                        else
+                        {
+                            MessageBox.Show("Registration failed.");
+                        }
+                        break;
 
-                        var mainForm = new MainForm(_client, txtLogin.Text.Trim());
-                        mainForm.Show();
-                        this.Hide();
-                    }
-                    else
-                    {
-                        MessageBox.Show("Incorrect login or password.");
-                        Logger.Log("Login failed", Logger.LogLevel.Error);
-                    }
-                });
-            }
+                    case "LoginResult":
+                        if (packet.Data == "OK")
+                        {
+                            
+                            Logger.Log("Login successful", Logger.LogLevel.Success);
+
+                            // чтобы не было повторных вызовов/гонок
+                            _client.OnPacketReceived -= HandlePacket;
+
+                            var login = txtLogin.Text.Trim();
+                            LoginSucceeded?.Invoke(_client, login);
+                        }
+                        else if (packet.Data == "BANNED")
+                        {
+                            MessageBox.Show("You are banned.");
+                        }
+                        else
+                        {
+                            MessageBox.Show("Incorrect login or password.");
+                        }
+                        break;
+                }
+            });
         }
 
         private void btnRegister_Click(object sender, EventArgs e)

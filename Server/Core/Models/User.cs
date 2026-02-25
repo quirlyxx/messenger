@@ -8,7 +8,14 @@ namespace Server.Core.Models
     {
         public string Login { get; set; } = string.Empty;
         public string HashPassword { get; set; } = string.Empty;
-        public List<string> Contacts { get; set; } = new();
+        public string UserName { get; set; } = string.Empty;
+        public List<Contact> Contacts { get; set; } = new();
         public List<string> IncomingRequests { get; set; } = new();
+    }
+
+    public class Contact
+    {
+        public string Login {  set; get; } = string.Empty;
+        public string Alias { get; set; } = string.Empty;
     }
 }

@@ -66,6 +66,11 @@ namespace Client.Network
                         OnPacketReceived?.Invoke(packet);
                         Logger.Log($"Received: {packet.Action} -> {packet.Data}", Logger.LogLevel.Info);
                     }
+                    if (line == null)
+                    {
+                        Logger.Log("Server closed connection", Logger.LogLevel.Warning);
+                        break;
+                    }
                 }
             }
             catch (Exception ex)
