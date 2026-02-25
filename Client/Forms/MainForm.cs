@@ -17,6 +17,7 @@ namespace Client.Forms
         private readonly NetworkClient _client;
         private readonly string _login;
         private List<ContactViewDto> _contactsCache = new();
+        private string? _activeChatLogin;
 
         public MainForm(NetworkClient client, string login)
         {
@@ -79,6 +80,26 @@ namespace Client.Forms
             e.DrawFocusRectangle();
         }
 
+        private void OpenChat(string withLogin)
+        {
+            _activeChatLogin = withLogin.Trim().ToLowerInvariant();
+            lstMessage.Items.Clear();
+
+            var history = ChatHistoryStore.Load(_login, _activeChatLogin);
+            foreach (var h in history)
+            {
+                var name = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
+                if (!h.isFile)
+                {
+                    lstMessage.Items.Add($"{h.Time:HH:mm} {name}: {h.Text}");
+                }
+                else
+                {
+                    lstMessage.Items.Add($"{h.Time:HH:mm} {name}: [File: {h.FileName}] {h.SavedPath}");
+                }
+            }
+        }
+
 
         private void OnPacketReceived(NetworkPacket packet)
         {
@@ -94,12 +115,29 @@ namespace Client.Forms
                 case "ReceiveMessage":
                     {
                         var msg = JsonSerializer.Deserialize<ChatMessage>(packet.Data);
-                        if (msg != null)
+                        if (msg == null) break;
+
+                        var chatLogin = msg.FromLogin.Trim().ToLowerInvariant();
+
+                        ChatHistoryStore.Append(_login, chatLogin, new ChatHistoryItem
+                        {
+                            WithLogin = chatLogin,
+                            isOutgoing = false,
+                            FromLogin = msg.FromLogin,
+                            FromName = msg.FromName,
+                            Text = msg.Text,
+                            Time = msg.Time,
+                            isFile = false
+                        });
+
+                        if(_activeChatLogin == chatLogin)
                         {
                             var name = ResolveSenderName(msg.FromLogin, msg.FromName);
-                            lstMessage.Items.Add($"{msg.Time:HH:mm} {name}: {msg.Text}");
+                            lstMessage.Items.Add($"[{msg.Time:HH:mm}] {name}: {msg.Text}");
                         }
+
                         break;
+
                     }
 
 
@@ -152,7 +190,28 @@ namespace Client.Forms
                     var bytes = Convert.FromBase64String(fileMsg.Base64);
                     File.WriteAllBytes(savePath, bytes);
 
-                    lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {fileMsg.FromName}: [File: {fileMsg.FileName}] saved → {savePath}");
+                    var withLogin = fileMsg.FromName.Trim().ToLowerInvariant();
+
+                    ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
+                    {
+                        WithLogin = withLogin,
+                        isOutgoing = false,
+                        FromLogin = fileMsg.FromLogin,
+                        FromName = fileMsg.FromName,
+                        Time = fileMsg.Time,
+                        isFile = true,
+                        FileName = fileMsg.FileName,
+                        SavedPath = savePath
+                    });
+
+                    if (_activeChatLogin == withLogin)
+                    {
+                        var name = ResolveSenderName(fileMsg.FromLogin, fileMsg.FromName);
+                       lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {name}: [File: {fileMsg.FileName}] saved → {savePath}");
+                    }
+
+
+                    
 
                     Logger.Log($"Received file from {fileMsg.FromName}: {fileMsg.FileName} saved to {savePath}", Logger.LogLevel.Success);
 
@@ -257,10 +316,27 @@ namespace Client.Forms
                 Data = JsonSerializer.Serialize(message)
             });
 
-            lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
+            //lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
             txtMessage.Clear();
 
             Logger.Log($"Sent message to {to}: {text}", Logger.LogLevel.Message);
+
+            var withLogin = to.Trim().ToLowerInvariant();
+            ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
+            {
+                WithLogin = withLogin,
+                isOutgoing = true,
+                FromLogin = _login,
+                FromName = "Me",
+                Text = text,
+                Time = message.Time,
+                isFile = false
+            });
+
+            if(_activeChatLogin == withLogin)
+            {
+                lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
+            }
         }
 
         private async void btnSendRequest_Click(object sender, EventArgs e)
@@ -331,7 +407,11 @@ namespace Client.Forms
             {
                 txtTo.Text = c.Login;
                 txtAlias.Text = c.Alias ?? "";
+
+                OpenChat(c.Login);
             }
+
+            
         }
 
         private async void btnLogout_Click(object sender, EventArgs e)
