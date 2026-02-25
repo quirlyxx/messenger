@@ -48,12 +48,13 @@
             txtAlias = new TextBox();
             label4 = new Label();
             groupBox2 = new GroupBox();
+            lblTyping = new Label();
+            lblStatus = new Label();
             btnSendFile = new Button();
             txtMyNick = new TextBox();
             label3 = new Label();
             btnSaveMyNick = new Button();
-            lblStatus = new Label();
-            lblTyping = new Label();
+            flpChat = new FlowLayoutPanel();
             groupBox1.SuspendLayout();
             groupBox2.SuspendLayout();
             SuspendLayout();
@@ -289,6 +290,7 @@
             // 
             // groupBox2
             // 
+            groupBox2.Controls.Add(flpChat);
             groupBox2.Controls.Add(lblTyping);
             groupBox2.Controls.Add(lblStatus);
             groupBox2.Controls.Add(btnSendFile);
@@ -300,10 +302,32 @@
             groupBox2.ForeColor = SystemColors.ActiveCaption;
             groupBox2.Location = new Point(399, 12);
             groupBox2.Name = "groupBox2";
-            groupBox2.Size = new Size(661, 574);
+            groupBox2.Size = new Size(661, 935);
             groupBox2.TabIndex = 16;
             groupBox2.TabStop = false;
             groupBox2.Text = "Chat";
+            // 
+            // lblTyping
+            // 
+            lblTyping.AutoSize = true;
+            lblTyping.Font = new Font("Times New Roman", 10.8F);
+            lblTyping.ForeColor = Color.FromArgb(233, 254, 254);
+            lblTyping.Location = new Point(379, 26);
+            lblTyping.Name = "lblTyping";
+            lblTyping.Size = new Size(68, 20);
+            lblTyping.TabIndex = 7;
+            lblTyping.Text = "typing...";
+            lblTyping.Visible = false;
+            // 
+            // lblStatus
+            // 
+            lblStatus.AutoSize = true;
+            lblStatus.Font = new Font("Times New Roman", 10.8F);
+            lblStatus.ForeColor = Color.FromArgb(233, 254, 254);
+            lblStatus.Location = new Point(210, 26);
+            lblStatus.Name = "lblStatus";
+            lblStatus.Size = new Size(0, 20);
+            lblStatus.TabIndex = 6;
             // 
             // btnSendFile
             // 
@@ -349,34 +373,22 @@
             btnSaveMyNick.UseVisualStyleBackColor = false;
             btnSaveMyNick.Click += btnSaveMyNick_Click;
             // 
-            // lblStatus
+            // flpChat
             // 
-            lblStatus.AutoSize = true;
-            lblStatus.Font = new Font("Times New Roman", 10.8F);
-            lblStatus.ForeColor = Color.FromArgb(233, 254, 254);
-            lblStatus.Location = new Point(210, 26);
-            lblStatus.Name = "lblStatus";
-            lblStatus.Size = new Size(0, 20);
-            lblStatus.TabIndex = 6;
-            // 
-            // lblTyping
-            // 
-            lblTyping.AutoSize = true;
-            lblTyping.Font = new Font("Times New Roman", 10.8F);
-            lblTyping.ForeColor = Color.FromArgb(233, 254, 254);
-            lblTyping.Location = new Point(379, 26);
-            lblTyping.Name = "lblTyping";
-            lblTyping.Size = new Size(68, 20);
-            lblTyping.TabIndex = 7;
-            lblTyping.Text = "typing...";
-            lblTyping.Visible = false;
+            flpChat.AutoScroll = true;
+            flpChat.FlowDirection = FlowDirection.TopDown;
+            flpChat.Location = new Point(6, 567);
+            flpChat.Name = "flpChat";
+            flpChat.Size = new Size(646, 362);
+            flpChat.TabIndex = 8;
+            flpChat.WrapContents = false;
             // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(15, 23, 42);
-            ClientSize = new Size(1249, 604);
+            ClientSize = new Size(1249, 959);
             Controls.Add(btnSaveMyNick);
             Controls.Add(label3);
             Controls.Add(txtMyNick);
@@ -423,5 +435,6 @@
         private Button btnSaveMyNick;
         private Label lblTyping;
         private Label lblStatus;
+        private FlowLayoutPanel flpChat;
     }
 }

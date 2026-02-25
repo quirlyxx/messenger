@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using Server.Core.Models;
@@ -21,7 +22,6 @@ namespace Server.Core.Services
 
         public bool Register(string login, string password)
         {
-            login = Norm(login);
             if (_users.Any(u => Norm(u.Login) == login)) return false;
 
             _users.Add(new User

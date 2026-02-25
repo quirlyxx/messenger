@@ -94,6 +94,77 @@ namespace Client.Forms
             await _client.SendAsync(new NetworkPacket { Action = "GetProfile" });
         }
 
+        private void AddBubble(string text, bool isMine, DateTime time, string? name = null)
+        {
+            var row = new Panel
+            {
+                AutoSize = true,
+                Width = flpChat.ClientSize.Width - 25,
+                Margin = new Padding(0, 6, 0, 6)
+            };
+
+            var bubble = new Panel
+            {
+                AutoSize = true,
+                MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.7), 0),
+                Padding = new Padding(10, 8, 10, 8),
+                BackColor = isMine ? Color.FromArgb(40, 120, 255) : Color.FromArgb(240, 240, 240),
+            };
+
+            var lbl = new Label
+            {
+                AutoSize = true,
+                MaximumSize = bubble.MaximumSize,
+                Text = text,
+                ForeColor = isMine ? Color.White : Color.Black
+            };
+
+            var lblMeta = new Label
+            {
+                AutoSize = true,
+                ForeColor = isMine ? Color.FromArgb(220, 220, 220) : Color.Gray,
+                Font = new Font(Font.FontFamily, 8),
+                Text = (string.IsNullOrWhiteSpace(name) ? "" : name + " · ") + time.ToString("HH:mm"),
+                Margin = new Padding(0, 4, 0, 0)
+            };
+
+            var stack = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Padding = Padding.Empty,
+                Margin = Padding.Empty
+            };
+
+            stack.Controls.Add(lbl);
+            stack.Controls.Add(lblMeta);
+
+            bubble.Controls.Add(stack);
+
+            if (isMine)
+            {
+                bubble.Left = row.Width - bubble.PreferredSize.Width - 10;
+                bubble.Anchor = AnchorStyles.Right;
+            }
+            else
+            {
+                bubble.Left = 10;
+                bubble.Anchor = AnchorStyles.Left;
+            }
+
+            row.Controls.Add(bubble);
+            flpChat.Controls.Add(row);
+
+            ScrollChatToBottom();
+        }
+
+        private void ScrollChatToBottom()
+        {
+            if(flpChat.Controls.Count == 0) { return; }
+            flpChat.ScrollControlIntoView(flpChat.Controls[flpChat.Controls.Count - 1]);
+        }
+
         private async Task SendTypingAsync(bool isTyping)
         {
             if(_activeChatLogin == null) return;
@@ -155,23 +226,45 @@ namespace Client.Forms
 
         private void OpenChat(string withLogin)
         {
-            _activeChatLogin = withLogin.Trim().ToLowerInvariant();
+            _activeChatLogin = (withLogin ?? "").Trim().ToLowerInvariant();
+
+            // резервный список (оставляем)
             lstMessage.Items.Clear();
 
+            // основной чат (баблы)
+            flpChat.SuspendLayout();
+            flpChat.Controls.Clear();
+
             var history = ChatHistoryStore.Load(_login, _activeChatLogin);
+
             foreach (var h in history)
             {
-                var name = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
                 if (!h.isFile)
                 {
-                    lstMessage.Items.Add($"{h.Time:HH:mm} {name}: {h.Text}");
+                    if (h.isOutgoing)
+                    {
+                        AddBubble(h.Text, isMine: true, time: h.Time, name: "Me");
+                        lstMessage.Items.Add($"[{h.Time:HH:mm}] Me: {h.Text}");
+                    }
+                    else
+                    {
+                        var display = ResolveSenderName(h.FromLogin, h.FromName);
+                        AddBubble(h.Text, isMine: false, time: h.Time, name: display);
+                        lstMessage.Items.Add($"[{h.Time:HH:mm}] {display}: {h.Text}");
+                    }
                 }
                 else
                 {
-                    lstMessage.Items.Add($"{h.Time:HH:mm} {name}: [File: {h.FileName}] {h.SavedPath}");
+                    // файлы пока без пузырей (или хочешь — сделаем отдельный bubble для файла)
+                    var who = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
+                    lstMessage.Items.Add($"[{h.Time:HH:mm}] {who}: [File: {h.FileName}] {h.SavedPath}");
                 }
             }
-                UpdatePresenceUi();
+
+            flpChat.ResumeLayout();
+            ScrollChatToBottom();
+
+            UpdatePresenceUi();
         }
 
 
@@ -185,13 +278,13 @@ namespace Client.Forms
 
             switch (packet.Action)
             {
-                
+
                 case "ReceiveMessage":
                     {
                         var msg = JsonSerializer.Deserialize<ChatMessage>(packet.Data);
                         if (msg == null) break;
 
-                        var chatLogin = msg.FromLogin.Trim().ToLowerInvariant();
+                        var chatLogin = (msg.FromLogin ?? "").Trim().ToLowerInvariant();
 
                         ChatHistoryStore.Append(_login, chatLogin, new ChatHistoryItem
                         {
@@ -204,16 +297,17 @@ namespace Client.Forms
                             isFile = false
                         });
 
-                        if(_activeChatLogin == chatLogin)
+                        var display = ResolveSenderName(msg.FromLogin, msg.FromName);
+
+                        // Если открыт именно этот чат — показываем в UI
+                        if (_activeChatLogin == chatLogin)
                         {
-                            var name = ResolveSenderName(msg.FromLogin, msg.FromName);
-                            lstMessage.Items.Add($"[{msg.Time:HH:mm}] {name}: {msg.Text}");
+                            AddBubble(msg.Text, isMine: false, time: msg.Time, name: display);
+                            lstMessage.Items.Add($"[{msg.Time:HH:mm}] {display}: {msg.Text}");
                         }
 
                         break;
-
                     }
-
 
 
                 case "RequestsList":
@@ -281,7 +375,13 @@ namespace Client.Forms
                     if (_activeChatLogin == withLogin)
                     {
                         var name = ResolveSenderName(fileMsg.FromLogin, fileMsg.FromName);
-                       lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {name}: [File: {fileMsg.FileName}] saved → {savePath}");
+
+                        AddBubble($"[File] {fileMsg.FileName}\nSaved → {savePath}",
+                            isMine: false,
+                            time: fileMsg.Time,
+                            name: name);
+
+                        lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {name}: [File: {fileMsg.FileName}] saved → {savePath}");
                     }
 
 
@@ -444,6 +544,7 @@ namespace Client.Forms
             if(_activeChatLogin == withLogin)
             {
                 lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
+                AddBubble(text, isMine: true, time: message.Time, name: "Me");
             }
 
             _typingStopTimer.Stop();

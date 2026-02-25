@@ -53,7 +53,7 @@ namespace Server.Network
                     var json = await _reader.ReadLineAsync();
                     if (json == null) break;
                     var packet = JsonSerializer.Deserialize<NetworkPacket>(json);
-                    
+                    Logger.Log($"SERVER: Received Action={packet?.Action}", Logger.LogLevel.Debug);
                     if (packet != null) await HandlePacketAsync(packet);
                 }
             }

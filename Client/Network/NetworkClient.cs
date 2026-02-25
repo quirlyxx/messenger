@@ -43,7 +43,7 @@ namespace Client.Network
             try
             {
                 await _writer.WriteLineAsync(json);
-                Logger.Log($"Sent: {packet.Action} -> {packet.Data}", Logger.LogLevel.Info);
+                Logger.Log($"Sent: {packet.Action} -> {packet.Data}", Logger.LogLevel.Debug);
             }
             catch (Exception ex)
             {
