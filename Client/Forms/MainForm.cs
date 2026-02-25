@@ -10,6 +10,7 @@ using System.Windows.Forms;
 using System.Xml.Linq;
 
 
+
 namespace Client.Forms
 {
     public partial class MainForm : Form
@@ -18,26 +19,71 @@ namespace Client.Forms
         private readonly string _login;
         private List<ContactViewDto> _contactsCache = new();
         private string? _activeChatLogin;
+        private System.Windows.Forms.Timer _presenceTimer = new();
+        private Dictionary<string, bool> _presence = new();
+        private System.Windows.Forms.Timer _typingStopTimer = new();
+        private bool _isTypingSent;
 
         public MainForm(NetworkClient client, string login)
         {
-            
-            InitializeComponent();
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.WindowState = FormWindowState.Normal;
-            this.ShowInTaskbar = true;
 
-            this.BringToFront();
-            this.Activate();
-            this.TopMost = true;
-            this.TopMost = false;
+            InitializeComponent();
+
+            // 1) базовые поля
+            _client = client;
+            _login = (login ?? "").Trim().ToLowerInvariant();
+
+            // 2) базовая настройка окна (по желанию)
+            StartPosition = FormStartPosition.CenterScreen;
+            WindowState = FormWindowState.Normal;
+            ShowInTaskbar = true;
+
+            // 3) OWNER DRAW ListBox (важно до заполнения Items)
             lstContacts.DrawMode = DrawMode.OwnerDrawVariable;
             lstContacts.MeasureItem += LstContacts_MeasureItem;
             lstContacts.DrawItem += LstContacts_DrawItem;
-            _client = client;
-            _login = login;
-            lblCurrentUser.Text = $"Current User: {login}";
+
+            // 4) подписки на сеть (до LoadInitialData)
             _client.OnPacketReceived += OnPacketReceived;
+
+            // 5) таймер присутствия
+            _presenceTimer.Interval = 2000;
+            _presenceTimer.Tick += async (s, e) => await SendPresenceAsync();
+            _presenceTimer.Start();
+
+            // 6) таймер "перестал печатать" (СНАЧАЛА Tick, ПОТОМ Start/Stop)
+            _typingStopTimer.Interval = 800;
+            _typingStopTimer.Tick += async (s, e) =>
+            {
+                _typingStopTimer.Stop();
+                await SendTypingAsync(false);
+                _isTypingSent = false;
+            };
+
+            // 7) TextChanged — ПОСЛЕ настройки таймера
+            txtMessage.TextChanged += async (s, e) =>
+            {
+                if (_activeChatLogin == null) return;
+                if (!_client.IsConnected) return;
+
+                if (!_isTypingSent)
+                {
+                    await SendTypingAsync(true);
+                    _isTypingSent = true;
+                }
+
+                _typingStopTimer.Stop();
+                _typingStopTimer.Start();
+            };
+
+            // 8) первичное UI
+            lblCurrentUser.Text = $"Current User: {_login}";
+            lblTyping.Visible = false;
+            lblTyping.Text = "";
+            lblStatus.Text = "";
+            lblStatus.ForeColor = Color.Gray;
+
+            // 9) стартовые запросы к серверу
             LoadInitialData();
         }
 
@@ -46,6 +92,33 @@ namespace Client.Forms
             await _client.SendAsync(new NetworkPacket { Action = "GetContacts" });
             await _client.SendAsync(new NetworkPacket { Action = "GetRequests" });
             await _client.SendAsync(new NetworkPacket { Action = "GetProfile" });
+        }
+
+        private async Task SendTypingAsync(bool isTyping)
+        {
+            if(_activeChatLogin == null) return;
+
+            await _client.SendAsync(new NetworkPacket {
+                Action = "Typing",
+                Data = JsonSerializer.Serialize(new { To = _activeChatLogin, IsTyping = isTyping })
+            });
+        }
+
+        private async Task SendPresenceAsync()
+        {
+            if (!_client.IsConnected) return;
+            if(_contactsCache.Count == 0) return;
+
+            var dto = new Client.Core.PresenceRequestDto
+            {
+                Logins = _contactsCache.Select(c => c.Login).ToList()
+            };
+
+            await _client.SendAsync(new NetworkPacket
+            {
+                Action = "GetPresence",
+                Data = JsonSerializer.Serialize(dto)
+            });
         }
 
         private void LstContacts_MeasureItem(object? sender, MeasureItemEventArgs e)
@@ -98,6 +171,7 @@ namespace Client.Forms
                     lstMessage.Items.Add($"{h.Time:HH:mm} {name}: [File: {h.FileName}] {h.SavedPath}");
                 }
             }
+                UpdatePresenceUi();
         }
 
 
@@ -179,7 +253,7 @@ namespace Client.Forms
                     var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "MessengerFiles");
                     Directory.CreateDirectory(directory);
 
-                    var safeName = $"{fileMsg.Time:yyyyMMdd_HHmmss}_{fileMsg.FromName}_{fileMsg.FileName}";
+                    var safeName = $"{fileMsg.Time:yyyyMMdd_HHmmss}_{fileMsg.FromLogin}_{fileMsg.FileName}";
                     foreach (var c in Path.GetInvalidFileNameChars())
                     {
                         safeName = safeName.Replace(c, '_');
@@ -190,7 +264,7 @@ namespace Client.Forms
                     var bytes = Convert.FromBase64String(fileMsg.Base64);
                     File.WriteAllBytes(savePath, bytes);
 
-                    var withLogin = fileMsg.FromName.Trim().ToLowerInvariant();
+                    var withLogin = fileMsg.FromLogin.Trim().ToLowerInvariant();
 
                     ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
                     {
@@ -258,7 +332,41 @@ namespace Client.Forms
                     if (packet.Data == "OK") MessageBox.Show("Nickname updated!");
                     else MessageBox.Show("Nickname update failed.");
                     break;
+                case "PresenceData":
+                    var map = JsonSerializer.Deserialize<Dictionary<string, bool>>(packet.Data);
+                    if (map != null)
+                    {
+                        _presence = map;
+                        
+                    }
+                    UpdatePresenceUi();
+                    lstContacts.Invalidate();
+                    break;
+                case "Typing":
+                    var dto = JsonSerializer.Deserialize<TypingIncomingDto>(packet.Data);
+                    if (dto == null) break;
+
+                    var from = dto.FromLogin.Trim().ToLowerInvariant();
+
+                    if (_activeChatLogin == from)
+                    {
+                        lblTyping.Text = dto.IsTyping ? "typing..." : "";
+                        lblTyping.Visible = dto.IsTyping;
+                        lblTyping.ForeColor = Color.Gray;
+                    }
+                    break;
             }
+        }
+
+        private void UpdatePresenceUi()
+        {
+            if(_activeChatLogin == null) return;
+
+            var key = _activeChatLogin.Trim().ToLowerInvariant();
+            var online = _presence.TryGetValue(key, out var isOn) && isOn;
+
+            lblStatus.Text = online ? "● Online" : "● Offline";
+            lblStatus.ForeColor = online ? Color.LimeGreen : Color.Gray;
         }
 
         private string ResolveSenderName(string fromLogin, string fallbackName)
@@ -337,6 +445,10 @@ namespace Client.Forms
             {
                 lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
             }
+
+            _typingStopTimer.Stop();
+            _isTypingSent = false;
+            await SendTypingAsync(false);
         }
 
         private async void btnSendRequest_Click(object sender, EventArgs e)

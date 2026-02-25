@@ -21,6 +21,7 @@ namespace Server.Network
         private static readonly Dictionary<string, ClientHandler> _connectedClients = new();
         private static readonly object _lock = new();
         private string? _currentUser;
+        private static string Norm(string s) => (s ?? "").Trim().ToLowerInvariant();
 
         public ClientHandler(TcpClient client, AuthService authService)
         {
@@ -52,7 +53,7 @@ namespace Server.Network
                     var json = await _reader.ReadLineAsync();
                     if (json == null) break;
                     var packet = JsonSerializer.Deserialize<NetworkPacket>(json);
-                    Logger.Log($"SERVER: Received Action={packet?.Action}", Logger.LogLevel.Info);
+                    
                     if (packet != null) await HandlePacketAsync(packet);
                 }
             }
@@ -92,10 +93,53 @@ namespace Server.Network
                 case "UpdateProfileName": await HandleUpdateProfileNameAsync(packet.Data); break;
                 case "UpdateContactAlias": await HandleUpdateContactAliasAsync(packet.Data); break;
                 case "GetProfile": await HandleGetProfileAsync(); break;
-
+                case "GetPresence": await HandleGetPresenceAsync(packet.Data); break;
+                case "Typing": await HandleTypingAsync(packet.Data); break;
             }
         }
 
+        private async Task HandleGetPresenceAsync(string? data)
+        {
+            if(_currentUser == null || data == null)return;
+
+            var dto = JsonSerializer.Deserialize<PresenceRequestDto>(data);
+            if (dto == null) return;
+
+            var result = new Dictionary<string, bool>();
+            var snapshot = ConnectedClients;
+
+            foreach(var l in dto.Logins ?? new List<string>())
+            {
+                var key = Norm(l);
+                result[key] = snapshot.ContainsKey(key);
+
+            }
+
+            await SendAsync(new NetworkPacket
+            {
+                Action = "PresenceData",
+                Data = JsonSerializer.Serialize(result)
+            });
+        }
+
+        private async Task HandleTypingAsync(string? data)
+        {
+            if (_currentUser == null || data == null) return;
+            var dto = JsonSerializer.Deserialize<TypingDto>(data);
+            if (dto == null) return;
+            
+            var toKey = Norm(dto.To);
+
+            ClientHandler? target;
+            lock (_lock) { _connectedClients.TryGetValue(toKey, out target); }
+            if (target == null) return;
+
+            await target.SendAsync(new NetworkPacket
+            {
+                Action = "Typing",
+                Data = JsonSerializer.Serialize(new { FromLogin = _currentUser, IsTyping = dto.IsTyping })
+            });
+        }
         private async Task HandleGetProfileAsync()
         {
             if(_currentUser == null)  return;
@@ -519,5 +563,17 @@ namespace Server.Network
     {
         public string ContactLogin { get; set; } = string.Empty;
         public string Alias { get; set; } = string.Empty;
+    }
+
+    public class PresenceRequestDto
+    {
+        public List<string> Logins { get; set; } = new();
+    }
+
+    public class TypingDto
+    {
+        public string To { get; set; } = string.Empty;
+        public bool IsTyping { get; set; }
+
     }
 }

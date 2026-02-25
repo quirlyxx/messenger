@@ -64,7 +64,7 @@ namespace Client.Network
                     if (packet != null)
                     {
                         OnPacketReceived?.Invoke(packet);
-                        Logger.Log($"Received: {packet.Action} -> {packet.Data}", Logger.LogLevel.Info);
+
                     }
                     if (line == null)
                     {

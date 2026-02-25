@@ -52,6 +52,8 @@
             txtMyNick = new TextBox();
             label3 = new Label();
             btnSaveMyNick = new Button();
+            lblStatus = new Label();
+            lblTyping = new Label();
             groupBox1.SuspendLayout();
             groupBox2.SuspendLayout();
             SuspendLayout();
@@ -86,7 +88,7 @@
             lstMessage.Location = new Point(6, 56);
             lstMessage.MultiColumn = true;
             lstMessage.Name = "lstMessage";
-            lstMessage.Size = new Size(646, 334);
+            lstMessage.Size = new Size(646, 444);
             lstMessage.TabIndex = 2;
             // 
             // txtMessage
@@ -94,9 +96,9 @@
             txtMessage.BackColor = SystemColors.ActiveCaption;
             txtMessage.Font = new Font("Times New Roman", 10.8F);
             txtMessage.ForeColor = SystemColors.ActiveCaptionText;
-            txtMessage.Location = new Point(6, 412);
+            txtMessage.Location = new Point(6, 527);
             txtMessage.Name = "txtMessage";
-            txtMessage.Size = new Size(125, 28);
+            txtMessage.Size = new Size(446, 28);
             txtMessage.TabIndex = 3;
             // 
             // btnSend
@@ -104,7 +106,7 @@
             btnSend.BackColor = Color.SteelBlue;
             btnSend.Font = new Font("Times New Roman", 12F);
             btnSend.ForeColor = SystemColors.GradientInactiveCaption;
-            btnSend.Location = new Point(137, 404);
+            btnSend.Location = new Point(458, 519);
             btnSend.Name = "btnSend";
             btnSend.Size = new Size(94, 42);
             btnSend.TabIndex = 4;
@@ -130,7 +132,6 @@
             lstContacts.ForeColor = Color.FromArgb(233, 254, 254);
             lstContacts.FormattingEnabled = true;
             lstContacts.Location = new Point(6, 26);
-            lstContacts.MultiColumn = false;
             lstContacts.Name = "lstContacts";
             lstContacts.Size = new Size(219, 268);
             lstContacts.TabIndex = 6;
@@ -215,7 +216,7 @@
             btnLogout.BackColor = Color.SteelBlue;
             btnLogout.Font = new Font("Times New Roman", 12F);
             btnLogout.ForeColor = SystemColors.GradientInactiveCaption;
-            btnLogout.Location = new Point(1066, 430);
+            btnLogout.Location = new Point(1067, 535);
             btnLogout.Name = "btnLogout";
             btnLogout.Size = new Size(126, 40);
             btnLogout.TabIndex = 13;
@@ -288,6 +289,8 @@
             // 
             // groupBox2
             // 
+            groupBox2.Controls.Add(lblTyping);
+            groupBox2.Controls.Add(lblStatus);
             groupBox2.Controls.Add(btnSendFile);
             groupBox2.Controls.Add(lstMessage);
             groupBox2.Controls.Add(txtMessage);
@@ -297,7 +300,7 @@
             groupBox2.ForeColor = SystemColors.ActiveCaption;
             groupBox2.Location = new Point(399, 12);
             groupBox2.Name = "groupBox2";
-            groupBox2.Size = new Size(661, 458);
+            groupBox2.Size = new Size(661, 574);
             groupBox2.TabIndex = 16;
             groupBox2.TabStop = false;
             groupBox2.Text = "Chat";
@@ -307,7 +310,7 @@
             btnSendFile.BackColor = Color.SteelBlue;
             btnSendFile.Font = new Font("Times New Roman", 12F);
             btnSendFile.ForeColor = SystemColors.GradientInactiveCaption;
-            btnSendFile.Location = new Point(237, 404);
+            btnSendFile.Location = new Point(558, 519);
             btnSendFile.Name = "btnSendFile";
             btnSendFile.Size = new Size(94, 42);
             btnSendFile.TabIndex = 5;
@@ -346,12 +349,34 @@
             btnSaveMyNick.UseVisualStyleBackColor = false;
             btnSaveMyNick.Click += btnSaveMyNick_Click;
             // 
+            // lblStatus
+            // 
+            lblStatus.AutoSize = true;
+            lblStatus.Font = new Font("Times New Roman", 10.8F);
+            lblStatus.ForeColor = Color.FromArgb(233, 254, 254);
+            lblStatus.Location = new Point(210, 26);
+            lblStatus.Name = "lblStatus";
+            lblStatus.Size = new Size(0, 20);
+            lblStatus.TabIndex = 6;
+            // 
+            // lblTyping
+            // 
+            lblTyping.AutoSize = true;
+            lblTyping.Font = new Font("Times New Roman", 10.8F);
+            lblTyping.ForeColor = Color.FromArgb(233, 254, 254);
+            lblTyping.Location = new Point(379, 26);
+            lblTyping.Name = "lblTyping";
+            lblTyping.Size = new Size(68, 20);
+            lblTyping.TabIndex = 7;
+            lblTyping.Text = "typing...";
+            lblTyping.Visible = false;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(15, 23, 42);
-            ClientSize = new Size(1204, 604);
+            ClientSize = new Size(1249, 604);
             Controls.Add(btnSaveMyNick);
             Controls.Add(label3);
             Controls.Add(txtMyNick);
@@ -396,5 +421,7 @@
         private TextBox txtAlias;
         private Label label4;
         private Button btnSaveMyNick;
+        private Label lblTyping;
+        private Label lblStatus;
     }
 }
