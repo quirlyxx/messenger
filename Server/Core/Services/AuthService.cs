@@ -22,6 +22,7 @@ namespace Server.Core.Services
 
         public bool Register(string login, string password)
         {
+            login = Norm(login);
             if (_users.Any(u => Norm(u.Login) == login)) return false;
 
             _users.Add(new User
@@ -32,6 +33,29 @@ namespace Server.Core.Services
             });
             JsonStorage.Save(_users);
             return true;
+        }
+
+        public bool AddPending(string toLogin, string kind, string json)
+        {
+            toLogin = Norm(toLogin);
+            var u = _users.FirstOrDefault(x => Norm(x.Login) == toLogin);
+            if (u == null) return false;
+
+            u.Pending.Add(new PendingItem { Kind = kind, Json = json });
+            JsonStorage.Save(_users);
+            return true;
+        }
+
+        public List<PendingItem> PopPending(string login)
+        {
+            login = Norm(login);
+            var u = _users.FirstOrDefault(x => Norm(x.Login) == login);
+            if (u == null) return new();
+
+            var list = u.Pending.ToList();
+            u.Pending.Clear();
+            JsonStorage.Save(_users);
+            return list;
         }
 
         public User? Login(string login, string password)

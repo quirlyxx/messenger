@@ -49,5 +49,12 @@ namespace Client.Core
             var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true});
             File.WriteAllText(path, json);
         }
+
+        public static void SaveAll(string myLogin, string withLogin, List<ChatHistoryItem> list)
+        {
+            var path = FilePath(myLogin, withLogin);
+            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true});
+            File.WriteAllText(path, json);
+        }
     }
 }

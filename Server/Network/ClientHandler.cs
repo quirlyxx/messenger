@@ -1,4 +1,8 @@
-﻿using System;
+﻿using Server.Core;
+using Server.Core.Models;
+using Server.Core.Services;
+using Server.Storage;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -6,9 +10,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Server.Core;
-using Server.Core.Models;
-using Server.Core.Services;
 
 namespace Server.Network
 {
@@ -95,6 +96,8 @@ namespace Server.Network
                 case "GetProfile": await HandleGetProfileAsync(); break;
                 case "GetPresence": await HandleGetPresenceAsync(packet.Data); break;
                 case "Typing": await HandleTypingAsync(packet.Data); break;
+                case "MsgDelivered": await HandleMsgDeliveredAsync(packet.Data); break;
+                case "MsgRead": await HandleMsgReadAsync(packet.Data); break;
             }
         }
 
@@ -387,7 +390,7 @@ namespace Server.Network
                 await SendAsync(new NetworkPacket
                 {
                     Action = "ContactsList",
-                    Data = JsonSerializer.Serialize(_authService.GetContacts(_currentUser))
+                    Data = JsonSerializer.Serialize(_authService.GetContactView(_currentUser))
                 });
                 ClientHandler? targetHandler;
                 lock (_lock) { _connectedClients.TryGetValue(data, out targetHandler); }
@@ -397,7 +400,7 @@ namespace Server.Network
                     await targetHandler.SendAsync(new NetworkPacket
                     {
                         Action = "ContactsList",
-                        Data = JsonSerializer.Serialize(_authService.GetContacts(data))
+                        Data = JsonSerializer.Serialize(_authService.GetContactView(data))
                     });
                 }
             }
@@ -472,6 +475,28 @@ namespace Server.Network
                 _currentUser = user.Login.Trim().ToLowerInvariant();
                 lock (_lock) { _connectedClients[_currentUser] = this; }
                 await SendAsync(new NetworkPacket { Action = "LoginResult", Data = "OK" });
+
+                var pending = _authService.PopPending(_currentUser);
+                foreach(var p in pending)
+                {
+                    if(p.Kind == "text")
+                    {
+                        await SendAsync(new NetworkPacket
+                        {
+                            Action = "ReceiveMessage",
+                            Data = p.Json
+                        });
+                    }
+                    else if(p.Kind == "file")
+                    {
+                        await SendAsync(new NetworkPacket
+                        {
+                            Action = "ReceiveFile",
+                            Data = p.Json
+                        });
+                    }
+                }
+
                 Logger.Log($"User {_currentUser} logged in", Logger.LogLevel.Success);
             }
             else
@@ -479,6 +504,44 @@ namespace Server.Network
                 await SendAsync(new NetworkPacket { Action = "LoginResult", Data = "FAIL" });
                 Logger.Log($"Failed login attempt: {creds.Login}", Logger.LogLevel.Error);
             }
+        }
+
+        private async Task HandleMsgDeliveredAsync(string? data)
+        {
+            if(_currentUser == null || data == null) return;
+            var dto = JsonSerializer.Deserialize<MsgStatusDto>(data);
+            if(dto == null) return;
+
+            var senderKey = Norm(dto.PeerLogin);
+
+            ClientHandler? sender;
+            lock (_lock) { _connectedClients.TryGetValue(senderKey, out sender); }
+            if(sender == null) return;
+
+            await sender.SendAsync(new NetworkPacket
+            {
+                Action = "MessageStatus",
+                Data = JsonSerializer.Serialize(new { MessageId = dto.MessageId, Status = "Delievered", PeerLogin = _currentUser })
+            });
+        }
+
+        private async Task HandleMsgReadAsync(string? data)
+        {
+            if (_currentUser == null || data == null) return;
+            var dto = JsonSerializer.Deserialize<MsgStatusDto>(data);
+            if (dto == null) return;
+
+            var senderKey = Norm(dto.PeerLogin);
+
+            ClientHandler? sender;
+            lock (_lock) { _connectedClients.TryGetValue(senderKey, out sender); }
+            if (sender == null) return;
+
+            await sender.SendAsync(new NetworkPacket
+            {
+                Action = "MessageStatus",
+                Data = JsonSerializer.Serialize(new { MessageId = dto.MessageId, Status = "Read", PeerLogin = _currentUser })
+            });
         }
 
         private async Task SendAsync(NetworkPacket packet)
@@ -503,17 +566,19 @@ namespace Server.Network
             var msg = JsonSerializer.Deserialize<ChatMessage>(data);
             if (msg == null) return;
 
-            // кто отправитель
-            var sender = _authService.GetUser(_currentUser);
-            var senderName = sender?.UserName ?? _currentUser;
+            var senderLogin = (_currentUser ?? "").Trim().ToLowerInvariant();
+            var sender = _authService.GetUser(senderLogin);
+            var senderName = sender?.UserName ?? senderLogin;
 
-            msg.FromLogin = _currentUser;
+            msg.FromLogin = senderLogin;
             msg.FromName = senderName;
+            msg.To = (msg.To ?? "").Trim().ToLowerInvariant();
             msg.Time = DateTime.Now;
 
+            if (string.IsNullOrWhiteSpace(msg.MessageId))
+                msg.MessageId = Guid.NewGuid().ToString("N");
             ClientHandler? target;
-            var toKey = msg.To.Trim().ToLowerInvariant();
-            lock (_lock) { _connectedClients.TryGetValue(toKey, out target); }
+            lock (_lock) { _connectedClients.TryGetValue(msg.To, out target); }
 
             if (target != null)
             {
@@ -522,11 +587,13 @@ namespace Server.Network
                     Action = "ReceiveMessage",
                     Data = JsonSerializer.Serialize(msg)
                 });
-
                 await SendAsync(new NetworkPacket { Action = "SendMessageResult", Data = "OK" });
             }
             else
             {
+          
+                _authService.AddPending(msg.To, "text", JsonSerializer.Serialize(msg));
+
                 await SendAsync(new NetworkPacket { Action = "SendMessageResult", Data = "USER_OFFLINE" });
             }
         }
@@ -582,6 +649,13 @@ namespace Server.Network
     {
         public string To { get; set; } = string.Empty;
         public bool IsTyping { get; set; }
+
+    }
+
+    public class MsgStatusDto
+    {
+        public string MessageId { get; set; } = "";
+        public string PeerLogin { get; set; } = "";
 
     }
 }

@@ -14,6 +14,7 @@ namespace Client.Core
         public string Base64 { get; set; } = string.Empty;
         public long SizeBytes { get; set; }
         public DateTime Time { get; set; }
+        public string MessageId { get; set; } = string.Empty;
 
     }
 }

@@ -3,13 +3,14 @@ using Client.Forms.Controls;
 using Client.Network;
 using System;
 using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Linq;
-using System.Drawing.Drawing2D;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 
 
@@ -109,32 +110,8 @@ namespace Client.Forms
             await _client.SendAsync(new NetworkPacket { Action = "GetProfile" });
         }
 
-        private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
-        {
-            int d = radius * 2;
-            var path = new GraphicsPath();
-            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
-            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
-            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
-        }
 
-        private static void ApplyRoundedRegion(Control c, int radius)
-        {
-            void apply()
-            {
-                if (c.Width <= 1 || c.Height <= 1) return;
-                using var path = RoundedRect(new Rectangle(0, 0, c.Width, c.Height), radius);
-                c.Region = new Region(path);
-            }
-
-            c.SizeChanged += (s, e) => apply();
-            c.HandleCreated += (s, e) => apply();
-        }
-
-        private void AddTextBubble(string text, bool isMine, DateTime time, string name)
+        private void AddTextBubble(string text, bool isMine, DateTime time, string name, string? status = null)
         {
             flpChat.SuspendLayout();
 
@@ -152,7 +129,7 @@ namespace Client.Forms
             row.Anchor = AnchorStyles.Left | AnchorStyles.Right;
 
             var bubble = new MessageBubble();
-            bubble.SetTextMessage(isMine, name, text, time);
+            bubble.SetTextMessage(isMine, name, text, time, status);
 
             // ограничение ширины пузыря
             bubble.MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.65), 0);
@@ -184,7 +161,7 @@ namespace Client.Forms
         }
 
         private void AddFileBubble(string fileName, long sizeBytes, string pathToOpen,
-    bool isMine, DateTime time, string name)
+    bool isMine, DateTime time, string name, string? status = null)
         {
             flpChat.SuspendLayout();
 
@@ -201,7 +178,7 @@ namespace Client.Forms
             row.Anchor = AnchorStyles.Left | AnchorStyles.Right;
 
             var bubble = new MessageBubble();
-            bubble.SetFileMessage(isMine, name, fileName, sizeBytes, time, pathToOpen);
+            bubble.SetFileMessage(isMine, name, fileName, sizeBytes, time, pathToOpen, status);
 
             bubble.MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.65), 0);
             bubble.AutoSize = true;
@@ -298,31 +275,112 @@ namespace Client.Forms
 
         private void OpenChat(string withLogin)
         {
+            if (string.IsNullOrWhiteSpace(withLogin))
+                return;
+
             _activeChatLogin = withLogin.Trim().ToLowerInvariant();
 
-            flpChat.Controls.Clear();   // bubbles
-
+            flpChat.SuspendLayout();
+            flpChat.Controls.Clear();
 
             var history = ChatHistoryStore.Load(_login, _activeChatLogin);
+
             foreach (var h in history)
             {
-                var name = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
+                var name = h.isOutgoing
+                    ? "Me"
+                    : ResolveSenderName(h.FromLogin, h.FromName);
+
+                string? status = h.isOutgoing ? h.Status : null;
 
                 if (!h.isFile)
                 {
-                    AddTextBubble(h.Text ?? "", isMine: h.isOutgoing, time: h.Time, name: name);
-
+                    AddTextBubble(
+                        h.Text ?? "",
+                        isMine: h.isOutgoing,
+                        time: h.Time,
+                        name: name,
+                        status: status
+                    );
                 }
                 else
                 {
-                    AddFileBubble(h.FileName ?? "file", 0, h.SavedPath, isMine: h.isOutgoing, time: h.Time, name: name);
-
+                    AddFileBubble(
+                        h.FileName ?? "file",
+                        h.SizeBytes,
+                        h.SavedPath,
+                        isMine: h.isOutgoing,
+                        time: h.Time,
+                        name: name,
+                        status: status
+                    );
                 }
             }
+
+            flpChat.ResumeLayout();
+            ScrollChatToBottom();
+
+            // ✅ после открытия — помечаем входящие как прочитанные
+            MarkIncomingAsReadAndNotifyServer();
 
             UpdatePresenceUi();
         }
 
+        private void MarkIncomingAsReadAndNotifyServer()
+        {
+            if (_activeChatLogin == null) return;
+            if (!_client.IsConnected) return;
+
+            var peer = _activeChatLogin.Trim().ToLowerInvariant();
+            var history = ChatHistoryStore.Load(_login, peer);
+
+            bool changed = false;
+
+            foreach (var h in history)
+            {
+                if (h.isOutgoing) continue;
+                if (h.IsRead) continue;
+                if (string.IsNullOrWhiteSpace(h.MessageId)) continue;
+
+                _ = _client.SendAsync(new NetworkPacket
+                {
+                    Action = "MsgRead",
+                    Data = JsonSerializer.Serialize(new { MessageId = h.MessageId, PeerLogin = peer })
+                });
+
+                h.IsRead = true;
+                changed = true;
+            }
+
+            if (changed)
+                ChatHistoryStore.SaveAll(_login, peer, history);
+        }
+
+        private static int StatusRank(string s) => (s ?? "") switch
+        {
+            "Sent" => 1,
+            "Delivered" => 2,
+            "Read" => 3,
+            _ => 0
+        };
+
+        private void UpdateOutgoingStatusHistory(string peerLogin, string messageId, string newStatus)
+        {
+            var peer = (peerLogin ?? "").Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(peer)) return;
+            if (string.IsNullOrWhiteSpace(messageId)) return;
+
+            var list = ChatHistoryStore.Load(_login, peer);
+
+            var item = list.LastOrDefault(x => x.isOutgoing && x.MessageId == messageId);
+            if (item == null) return;
+
+            if (StatusRank(newStatus) > StatusRank(item.Status))
+            {
+                item.Status = newStatus;
+                ChatHistoryStore.SaveAll(_login, peer, list);
+            }
+        }
 
         private void OnPacketReceived(NetworkPacket packet)
         {
@@ -342,15 +400,26 @@ namespace Client.Forms
 
                         var chatLogin = (msg.FromLogin ?? "").Trim().ToLowerInvariant();
 
+                        if (!string.IsNullOrWhiteSpace(msg.MessageId))
+                        {
+                            _ = _client.SendAsync(new NetworkPacket
+                            {
+                                Action = "MsgDelivered",
+                                Data = JsonSerializer.Serialize(new { MessageId = msg.MessageId, PeerLogin = msg.FromLogin })
+                            });
+                        }
+
                         ChatHistoryStore.Append(_login, chatLogin, new ChatHistoryItem
                         {
+                            MessageId = msg.MessageId,
                             WithLogin = chatLogin,
                             isOutgoing = false,
                             FromLogin = msg.FromLogin,
                             FromName = msg.FromName,
                             Text = msg.Text,
                             Time = msg.Time,
-                            isFile = false
+                            isFile = false,
+                            IsRead = false
                         });
 
                         var display = ResolveSenderName(msg.FromLogin, msg.FromName);
@@ -361,11 +430,13 @@ namespace Client.Forms
                             var name = ResolveSenderName(msg.FromLogin, msg.FromName);
 
                             AddTextBubble(msg.Text, isMine: false, time: msg.Time, name: name);
-
+                            MarkIncomingAsReadAndNotifyServer();
                         }
+                        
+                        break;
                     }
 
-                        break;
+                        
                     
 
 
@@ -403,6 +474,20 @@ namespace Client.Forms
                 case "ReceiveFile":
                     var fileMsg = JsonSerializer.Deserialize<FileMessage>(packet.Data);
                     if (fileMsg == null) break;
+
+                    if (!string.IsNullOrWhiteSpace(fileMsg.MessageId))
+                    {
+                        _ = _client.SendAsync(new NetworkPacket
+                        {
+                            Action = "MsgDelivered",
+                            Data = JsonSerializer.Serialize(new Client.Core.MsgStatusDto
+                            {
+                                MessageId = fileMsg.MessageId,
+                                PeerLogin = fileMsg.FromLogin // отправитель файла
+                            })
+                        });
+                    }
+
                     var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "MessengerFiles");
                     Directory.CreateDirectory(directory);
 
@@ -421,6 +506,7 @@ namespace Client.Forms
 
                     ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
                     {
+                        MessageId = fileMsg.MessageId,
                         WithLogin = withLogin,
                         isOutgoing = false,
                         FromLogin = fileMsg.FromLogin,
@@ -428,7 +514,9 @@ namespace Client.Forms
                         Time = fileMsg.Time,
                         isFile = true,
                         FileName = fileMsg.FileName,
-                        SavedPath = savePath
+                        SavedPath = savePath,
+                        SizeBytes = fileMsg.SizeBytes,
+                        IsRead = false
                     });
 
                     if (_activeChatLogin == withLogin)
@@ -507,6 +595,24 @@ namespace Client.Forms
                         lblTyping.ForeColor = Color.Gray;
                     }
                     break;
+                case "MessageStatus":
+                    {
+                        var st = JsonSerializer.Deserialize<MessageStatusIncoming>(packet.Data);
+                        if (st == null) break;
+
+                        var peer = (st.PeerLogin ?? "").Trim().ToLowerInvariant();
+                        var status = (st.Status ?? "").Trim();
+
+                        if (string.IsNullOrWhiteSpace(peer) || string.IsNullOrWhiteSpace(st.MessageId))
+                            break;
+
+                        UpdateOutgoingStatusHistory(peer, st.MessageId, status);
+
+                        if (_activeChatLogin != null && _activeChatLogin.Trim().ToLowerInvariant() == peer)
+                            OpenChat(peer);
+
+                        break;
+                    }
             }
         }
 
@@ -562,8 +668,10 @@ namespace Client.Forms
                 return;
             }
 
+            var mid = Guid.NewGuid().ToString();
             var message = new ChatMessage
             {
+                MessageId = mid,
                 FromLogin = _login,
                 To = to,
                 Text = text,
@@ -584,13 +692,15 @@ namespace Client.Forms
             var withLogin = to.Trim().ToLowerInvariant();
             ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
             {
+                MessageId=mid,
                 WithLogin = withLogin,
                 isOutgoing = true,
                 FromLogin = _login,
                 FromName = "Me",
                 Text = text,
                 Time = message.Time,
-                isFile = false
+                isFile = false,
+                Status = "Sent"
             });
 
             if(_activeChatLogin == withLogin)

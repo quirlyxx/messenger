@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Client
-{
-    class logsettings
-    {
-    }
+﻿{
+  "Enabled": true,
+  "MinLevel": "Info"
 }

@@ -107,7 +107,7 @@ namespace Client.Forms.Controls
             MinimumSize = new Size(120, 0);
         }
 
-        public void SetTextMessage(bool isMine, string name, string text, DateTime time)
+        public void SetTextMessage(bool isMine, string name, string text, DateTime time, string? status = null)
         {
             IsMine = isMine;
             _bubbleColor = isMine ? MineBack : OtherBack;
@@ -115,13 +115,51 @@ namespace Client.Forms.Controls
             _lblName.Text = name;
             _lblText.Text = text;
             _lnkFile.Visible = false;
-            _lblMeta.Text = time.ToString("HH:mm");
+
+            string meta = time.ToString("HH:mm");
+
+            if (isMine)
+            {
+                var s = status ?? "Sent";
+
+                string marks = s switch
+                {
+                    "Sent" => " ✓",
+                    "Delivered" => " ✓✓",
+                    "Read" => " ✓✓",
+                    _ => ""
+                };
+
+                meta += marks;
+
+                // 🎨 Цвет галочек
+                _lblMeta.ForeColor = s switch
+                {
+                    "Sent" => Color.FromArgb(170, 170, 170),        // светло-серый
+                    "Delivered" => Color.FromArgb(170, 170, 170),   // серый
+                    "Read" => Color.FromArgb(80, 170, 255),         // голубой
+                    _ => Color.FromArgb(190, 190, 190)
+                };
+            }
+            else
+            {
+                _lblMeta.ForeColor = Color.FromArgb(190, 190, 190);
+            }
+
+            _lblMeta.Text = meta;
 
             PerformLayout();
             Invalidate();
         }
 
-        public void SetFileMessage(bool isMine, string name, string fileName, long sizeBytes, DateTime time, string? path)
+        public void SetFileMessage(
+    bool isMine,
+    string name,
+    string fileName,
+    long sizeBytes,
+    DateTime time,
+    string? path,
+    string? status = null)
         {
             IsMine = isMine;
             _bubbleColor = isMine ? MineBack : OtherBack;
@@ -134,7 +172,37 @@ namespace Client.Forms.Controls
             _lnkFile.Tag = path;
             _lnkFile.Visible = true;
 
-            _lblMeta.Text = time.ToString("HH:mm");
+            // --- meta (time + colored checks for outgoing)
+            string meta = time.ToString("HH:mm");
+
+            if (isMine)
+            {
+                var s = status ?? "Sent";
+
+                string marks = s switch
+                {
+                    "Sent" => " ✓",
+                    "Delivered" => " ✓✓",
+                    "Read" => " ✓✓",
+                    _ => ""
+                };
+
+                meta += marks;
+
+                _lblMeta.ForeColor = s switch
+                {
+                    "Sent" => Color.FromArgb(170, 170, 170),        // light gray
+                    "Delivered" => Color.FromArgb(170, 170, 170),   // gray
+                    "Read" => Color.FromArgb(80, 170, 255),         // blue-ish
+                    _ => Color.FromArgb(190, 190, 190)
+                };
+            }
+            else
+            {
+                _lblMeta.ForeColor = Color.FromArgb(190, 190, 190);
+            }
+
+            _lblMeta.Text = meta;
 
             PerformLayout();
             Invalidate();

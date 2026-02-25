@@ -11,8 +11,15 @@ namespace Server.Core.Models
         public string UserName { get; set; } = string.Empty;
         public List<Contact> Contacts { get; set; } = new();
         public List<string> IncomingRequests { get; set; } = new();
+        public List<PendingItem> Pending { get; set; } = new();
     }
 
+    public class PendingItem
+    {
+        public string Kind { get; set; } = "";
+        public string Json { get; set; } = "";
+
+    }
     public class Contact
     {
         public string Login {  set; get; } = string.Empty;
