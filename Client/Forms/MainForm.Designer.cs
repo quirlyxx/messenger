@@ -30,7 +30,6 @@
         {
             label1 = new Label();
             txtTo = new TextBox();
-            lstMessage = new ListBox();
             txtMessage = new TextBox();
             btnSend = new Button();
             lblCurrentUser = new Label();
@@ -48,13 +47,13 @@
             txtAlias = new TextBox();
             label4 = new Label();
             groupBox2 = new GroupBox();
+            flpChat = new FlowLayoutPanel();
             lblTyping = new Label();
             lblStatus = new Label();
             btnSendFile = new Button();
             txtMyNick = new TextBox();
             label3 = new Label();
             btnSaveMyNick = new Button();
-            flpChat = new FlowLayoutPanel();
             groupBox1.SuspendLayout();
             groupBox2.SuspendLayout();
             SuspendLayout();
@@ -79,18 +78,6 @@
             txtTo.Name = "txtTo";
             txtTo.Size = new Size(125, 28);
             txtTo.TabIndex = 1;
-            // 
-            // lstMessage
-            // 
-            lstMessage.BackColor = Color.FromArgb(47, 84, 145);
-            lstMessage.Font = new Font("Times New Roman", 12F);
-            lstMessage.ForeColor = Color.FromArgb(233, 254, 254);
-            lstMessage.FormattingEnabled = true;
-            lstMessage.Location = new Point(6, 56);
-            lstMessage.MultiColumn = true;
-            lstMessage.Name = "lstMessage";
-            lstMessage.Size = new Size(646, 444);
-            lstMessage.TabIndex = 2;
             // 
             // txtMessage
             // 
@@ -294,7 +281,6 @@
             groupBox2.Controls.Add(lblTyping);
             groupBox2.Controls.Add(lblStatus);
             groupBox2.Controls.Add(btnSendFile);
-            groupBox2.Controls.Add(lstMessage);
             groupBox2.Controls.Add(txtMessage);
             groupBox2.Controls.Add(btnSend);
             groupBox2.Controls.Add(label1);
@@ -302,10 +288,20 @@
             groupBox2.ForeColor = SystemColors.ActiveCaption;
             groupBox2.Location = new Point(399, 12);
             groupBox2.Name = "groupBox2";
-            groupBox2.Size = new Size(661, 935);
+            groupBox2.Size = new Size(661, 580);
             groupBox2.TabIndex = 16;
             groupBox2.TabStop = false;
             groupBox2.Text = "Chat";
+            // 
+            // flpChat
+            // 
+            flpChat.AutoScroll = true;
+            flpChat.FlowDirection = FlowDirection.TopDown;
+            flpChat.Location = new Point(9, 57);
+            flpChat.Name = "flpChat";
+            flpChat.Size = new Size(646, 456);
+            flpChat.TabIndex = 8;
+            flpChat.WrapContents = false;
             // 
             // lblTyping
             // 
@@ -373,22 +369,12 @@
             btnSaveMyNick.UseVisualStyleBackColor = false;
             btnSaveMyNick.Click += btnSaveMyNick_Click;
             // 
-            // flpChat
-            // 
-            flpChat.AutoScroll = true;
-            flpChat.FlowDirection = FlowDirection.TopDown;
-            flpChat.Location = new Point(6, 567);
-            flpChat.Name = "flpChat";
-            flpChat.Size = new Size(646, 362);
-            flpChat.TabIndex = 8;
-            flpChat.WrapContents = false;
-            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = Color.FromArgb(15, 23, 42);
-            ClientSize = new Size(1249, 959);
+            ClientSize = new Size(1249, 615);
             Controls.Add(btnSaveMyNick);
             Controls.Add(label3);
             Controls.Add(txtMyNick);
@@ -411,7 +397,6 @@
 
         private Label label1;
         private TextBox txtTo;
-        private ListBox lstMessage;
         private TextBox txtMessage;
         private Button btnSend;
         private Label lblCurrentUser;

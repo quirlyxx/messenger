@@ -1,4 +1,5 @@
 ﻿using Client.Core;
+using Client.Forms.Controls;
 using Client.Network;
 using System;
 using System.Diagnostics;
@@ -8,6 +9,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Linq;
+using System.Drawing.Drawing2D;
 
 
 
@@ -28,6 +30,19 @@ namespace Client.Forms
         {
 
             InitializeComponent();
+
+            flpChat.AutoScroll = true;
+            flpChat.WrapContents = false;
+            flpChat.FlowDirection = FlowDirection.TopDown;
+            flpChat.Padding = new Padding(12);
+            flpChat.BackColor = Color.FromArgb(20, 24, 32);
+            flpChat.HorizontalScroll.Enabled = false;
+            flpChat.HorizontalScroll.Visible = false;
+
+            typeof(Panel).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.SetValue(flpChat, true, null);
+
+            flpChat.ControlAdded += (s, e) => ScrollChatToBottom();
 
             // 1) базовые поля
             _client = client;
@@ -94,76 +109,133 @@ namespace Client.Forms
             await _client.SendAsync(new NetworkPacket { Action = "GetProfile" });
         }
 
-        private void AddBubble(string text, bool isMine, DateTime time, string? name = null)
+        private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
         {
+            int d = radius * 2;
+            var path = new GraphicsPath();
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        private static void ApplyRoundedRegion(Control c, int radius)
+        {
+            void apply()
+            {
+                if (c.Width <= 1 || c.Height <= 1) return;
+                using var path = RoundedRect(new Rectangle(0, 0, c.Width, c.Height), radius);
+                c.Region = new Region(path);
+            }
+
+            c.SizeChanged += (s, e) => apply();
+            c.HandleCreated += (s, e) => apply();
+        }
+
+        private void AddTextBubble(string text, bool isMine, DateTime time, string name)
+        {
+            flpChat.SuspendLayout();
+
             var row = new Panel
             {
+                Height = 1,
                 AutoSize = true,
-                Width = flpChat.ClientSize.Width - 25,
-                Margin = new Padding(0, 6, 0, 6)
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 6, 0, 6),
+                Padding = new Padding(10, 0, 10, 0)
             };
 
-            var bubble = new Panel
-            {
-                AutoSize = true,
-                MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.7), 0),
-                Padding = new Padding(10, 8, 10, 8),
-                BackColor = isMine ? Color.FromArgb(40, 120, 255) : Color.FromArgb(240, 240, 240),
-            };
+            // строка должна быть "на всю ширину"
+            row.Width = flpChat.ClientSize.Width - flpChat.Padding.Horizontal - 5;
+            row.Anchor = AnchorStyles.Left | AnchorStyles.Right;
 
-            var lbl = new Label
-            {
-                AutoSize = true,
-                MaximumSize = bubble.MaximumSize,
-                Text = text,
-                ForeColor = isMine ? Color.White : Color.Black
-            };
+            var bubble = new MessageBubble();
+            bubble.SetTextMessage(isMine, name, text, time);
 
-            var lblMeta = new Label
-            {
-                AutoSize = true,
-                ForeColor = isMine ? Color.FromArgb(220, 220, 220) : Color.Gray,
-                Font = new Font(Font.FontFamily, 8),
-                Text = (string.IsNullOrWhiteSpace(name) ? "" : name + " · ") + time.ToString("HH:mm"),
-                Margin = new Padding(0, 4, 0, 0)
-            };
-
-            var stack = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                Padding = Padding.Empty,
-                Margin = Padding.Empty
-            };
-
-            stack.Controls.Add(lbl);
-            stack.Controls.Add(lblMeta);
-
-            bubble.Controls.Add(stack);
-
-            if (isMine)
-            {
-                bubble.Left = row.Width - bubble.PreferredSize.Width - 10;
-                bubble.Anchor = AnchorStyles.Right;
-            }
-            else
-            {
-                bubble.Left = 10;
-                bubble.Anchor = AnchorStyles.Left;
-            }
+            // ограничение ширины пузыря
+            bubble.MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.65), 0);
+            bubble.AutoSize = true;
 
             row.Controls.Add(bubble);
+
+            // ВАЖНО: после добавления можно посчитать PreferredSize и выставить Left
+            row.Layout += (s, e) =>
+            {
+                // подстрахуемся на ресайз/скролл
+                row.Width = flpChat.ClientSize.Width - flpChat.Padding.Horizontal - 5;
+
+                var w = bubble.PreferredSize.Width;
+                bubble.Width = w;
+
+                bubble.Top = 0;
+
+                if (isMine)
+                    bubble.Left = row.Width - row.Padding.Right - bubble.Width; // вправо
+                else
+                    bubble.Left = row.Padding.Left; // влево
+            };
+
             flpChat.Controls.Add(row);
 
+            flpChat.ResumeLayout();
+            ScrollChatToBottom();
+        }
+
+        private void AddFileBubble(string fileName, long sizeBytes, string pathToOpen,
+    bool isMine, DateTime time, string name)
+        {
+            flpChat.SuspendLayout();
+
+            var row = new Panel
+            {
+                Height = 1,
+                AutoSize = true,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 6, 0, 6),
+                Padding = new Padding(10, 0, 10, 0)
+            };
+
+            row.Width = flpChat.ClientSize.Width - flpChat.Padding.Horizontal - 5;
+            row.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+
+            var bubble = new MessageBubble();
+            bubble.SetFileMessage(isMine, name, fileName, sizeBytes, time, pathToOpen);
+
+            bubble.MaximumSize = new Size((int)(flpChat.ClientSize.Width * 0.65), 0);
+            bubble.AutoSize = true;
+
+            row.Controls.Add(bubble);
+
+            row.Layout += (s, e) =>
+            {
+                row.Width = flpChat.ClientSize.Width - flpChat.Padding.Horizontal - 5;
+
+                var w = bubble.PreferredSize.Width;
+                bubble.Width = w;
+
+                bubble.Top = 0;
+
+                if (isMine)
+                    bubble.Left = row.Width - row.Padding.Right - bubble.Width;
+                else
+                    bubble.Left = row.Padding.Left;
+            };
+
+            flpChat.Controls.Add(row);
+
+            flpChat.ResumeLayout();
             ScrollChatToBottom();
         }
 
         private void ScrollChatToBottom()
         {
-            if(flpChat.Controls.Count == 0) { return; }
+            if (flpChat.Controls.Count == 0) return;
             flpChat.ScrollControlIntoView(flpChat.Controls[flpChat.Controls.Count - 1]);
         }
+
+        
 
         private async Task SendTypingAsync(bool isTyping)
         {
@@ -226,43 +298,27 @@ namespace Client.Forms
 
         private void OpenChat(string withLogin)
         {
-            _activeChatLogin = (withLogin ?? "").Trim().ToLowerInvariant();
+            _activeChatLogin = withLogin.Trim().ToLowerInvariant();
 
-            // резервный список (оставляем)
-            lstMessage.Items.Clear();
+            flpChat.Controls.Clear();   // bubbles
 
-            // основной чат (баблы)
-            flpChat.SuspendLayout();
-            flpChat.Controls.Clear();
 
             var history = ChatHistoryStore.Load(_login, _activeChatLogin);
-
             foreach (var h in history)
             {
+                var name = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
+
                 if (!h.isFile)
                 {
-                    if (h.isOutgoing)
-                    {
-                        AddBubble(h.Text, isMine: true, time: h.Time, name: "Me");
-                        lstMessage.Items.Add($"[{h.Time:HH:mm}] Me: {h.Text}");
-                    }
-                    else
-                    {
-                        var display = ResolveSenderName(h.FromLogin, h.FromName);
-                        AddBubble(h.Text, isMine: false, time: h.Time, name: display);
-                        lstMessage.Items.Add($"[{h.Time:HH:mm}] {display}: {h.Text}");
-                    }
+                    AddTextBubble(h.Text ?? "", isMine: h.isOutgoing, time: h.Time, name: name);
+
                 }
                 else
                 {
-                    // файлы пока без пузырей (или хочешь — сделаем отдельный bubble для файла)
-                    var who = h.isOutgoing ? "Me" : ResolveSenderName(h.FromLogin, h.FromName);
-                    lstMessage.Items.Add($"[{h.Time:HH:mm}] {who}: [File: {h.FileName}] {h.SavedPath}");
+                    AddFileBubble(h.FileName ?? "file", 0, h.SavedPath, isMine: h.isOutgoing, time: h.Time, name: name);
+
                 }
             }
-
-            flpChat.ResumeLayout();
-            ScrollChatToBottom();
 
             UpdatePresenceUi();
         }
@@ -302,12 +358,15 @@ namespace Client.Forms
                         // Если открыт именно этот чат — показываем в UI
                         if (_activeChatLogin == chatLogin)
                         {
-                            AddBubble(msg.Text, isMine: false, time: msg.Time, name: display);
-                            lstMessage.Items.Add($"[{msg.Time:HH:mm}] {display}: {msg.Text}");
+                            var name = ResolveSenderName(msg.FromLogin, msg.FromName);
+
+                            AddTextBubble(msg.Text, isMine: false, time: msg.Time, name: name);
+
                         }
+                    }
 
                         break;
-                    }
+                    
 
 
                 case "RequestsList":
@@ -376,16 +435,9 @@ namespace Client.Forms
                     {
                         var name = ResolveSenderName(fileMsg.FromLogin, fileMsg.FromName);
 
-                        AddBubble($"[File] {fileMsg.FileName}\nSaved → {savePath}",
-                            isMine: false,
-                            time: fileMsg.Time,
-                            name: name);
+                        AddFileBubble(fileMsg.FileName, fileMsg.SizeBytes, savePath, isMine: false, time: fileMsg.Time, name: name);
 
-                        lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {name}: [File: {fileMsg.FileName}] saved → {savePath}");
                     }
-
-
-                    
 
                     Logger.Log($"Received file from {fileMsg.FromName}: {fileMsg.FileName} saved to {savePath}", Logger.LogLevel.Success);
 
@@ -543,8 +595,8 @@ namespace Client.Forms
 
             if(_activeChatLogin == withLogin)
             {
-                lstMessage.Items.Add($"[{message.Time:HH:mm}] Me: {text}");
-                AddBubble(text, isMine: true, time: message.Time, name: "Me");
+                AddTextBubble(text, isMine: true, time: message.Time, name: "Me");
+
             }
 
             _typingStopTimer.Stop();
@@ -675,22 +727,36 @@ namespace Client.Forms
             if (string.IsNullOrWhiteSpace(to) && lstContacts.SelectedItem is ContactViewDto c)
                 to = c.Login;
 
+            to = (to ?? "").Trim();
             if (string.IsNullOrWhiteSpace(to))
             {
                 MessageBox.Show("Select a contact or type username in 'Send to'.");
                 return;
             }
 
-            using var ofd = new OpenFileDialog();
-            ofd.Title = "Select a file to send";
-            ofd.Filter = "All files (*.*)|*.*";
+            using var ofd = new OpenFileDialog
+            {
+                Title = "Select a file to send",
+                Filter = "All files (*.*)|*.*"
+            };
 
             if (ofd.ShowDialog() != DialogResult.OK) return;
 
             var path = ofd.FileName;
-            var bytes = File.ReadAllBytes(path);
 
-            if (bytes.Length > 10 * 1024 * 1024)
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(path);
+            }
+            catch
+            {
+                MessageBox.Show("Cannot read file.");
+                return;
+            }
+
+            const int maxBytes = 10 * 1024 * 1024;
+            if (bytes.Length > maxBytes)
             {
                 MessageBox.Show("File is too large (max 10 MB).");
                 return;
@@ -698,7 +764,8 @@ namespace Client.Forms
 
             var fileMsg = new FileMessage
             {
-                FromName = _login,
+                // важно: по твоей серверной логике он сам проставит FromLogin/FromName
+                FromName = _login, // можно оставить, сервер все равно перезапишет/нормализует
                 To = to,
                 FileName = Path.GetFileName(path),
                 ContentType = "application/octet-stream",
@@ -713,7 +780,28 @@ namespace Client.Forms
                 Data = JsonSerializer.Serialize(fileMsg)
             });
 
-            lstMessage.Items.Add($"[{fileMsg.Time:HH:mm}] {to}: [File: {fileMsg.FileName} ({fileMsg.SizeBytes / 1024} KB)]");
+            // ---- UI + история (как будто "отправлено")
+            var withLogin = to.Trim().ToLowerInvariant();
+
+            ChatHistoryStore.Append(_login, withLogin, new ChatHistoryItem
+            {
+                WithLogin = withLogin,
+                isOutgoing = true,
+                FromLogin = _login,
+                FromName = "Me",
+                Time = fileMsg.Time,
+                isFile = true,
+                FileName = fileMsg.FileName,
+                SavedPath = path // у отправителя файл лежит тут; bubble сможет "открыть"
+                                 // если у ChatHistoryItem есть SizeBytes - добавь тоже
+            });
+
+            if (_activeChatLogin == withLogin)
+            {
+                AddFileBubble(fileMsg.FileName, fileMsg.SizeBytes, path, isMine: true, time: fileMsg.Time, name: "Me");
+
+            }
+
             Logger.Log($"Sent file to {to}: {fileMsg.FileName} ({fileMsg.SizeBytes} bytes)", Logger.LogLevel.Message);
         }
 

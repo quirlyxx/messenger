@@ -226,27 +226,35 @@ namespace Server.Network
             var fileMsg = JsonSerializer.Deserialize<FileMessage>(data);
             if (fileMsg == null) return;
 
-            fileMsg.From = _currentUser.Trim();
-            fileMsg.To = fileMsg.To.Trim();
+            // sender
+            var senderLogin = Norm(_currentUser);
+            var sender = _authService.GetUser(senderLogin);
+            var senderName = sender?.UserName ?? senderLogin;
+
+            // normalize receiver
+            var toKey = Norm(fileMsg.To);
+
+            fileMsg.FromLogin = senderLogin;
+            fileMsg.FromName = senderName;
+            fileMsg.To = toKey;
             fileMsg.Time = DateTime.Now;
 
-            Logger.Log($"SERVER: SendFile from {fileMsg.From} to '{fileMsg.To}' size={fileMsg.SizeBytes}",
+            Logger.Log($"SERVER: SendFile from {fileMsg.FromLogin} to '{fileMsg.To}' size={fileMsg.SizeBytes}",
                 Logger.LogLevel.Info);
 
             if (fileMsg.SizeBytes > 10 * 1024 * 1024)
             {
                 await SendAsync(new NetworkPacket { Action = "SendFileResult", Data = "TOO_LARGE" });
-                Logger.Log($"SERVER: File too large from {fileMsg.From} to {fileMsg.To}", Logger.LogLevel.Warning);
                 return;
             }
 
             ClientHandler? target;
-            lock (_lock) { _connectedClients.TryGetValue(fileMsg.To, out target); }
+            lock (_lock) { _connectedClients.TryGetValue(toKey, out target); }
 
             if (target == null)
             {
                 await SendAsync(new NetworkPacket { Action = "SendFileResult", Data = "USER_OFFLINE" });
-                Logger.Log($"SERVER: File target offline: {fileMsg.From} -> {fileMsg.To}", Logger.LogLevel.Warning);
+                Logger.Log($"SERVER: File target offline: {fileMsg.FromLogin} -> {fileMsg.To}", Logger.LogLevel.Warning);
                 return;
             }
 
@@ -258,7 +266,7 @@ namespace Server.Network
 
             await SendAsync(new NetworkPacket { Action = "SendFileResult", Data = "OK" });
 
-            Logger.Log($"SERVER: File delivered {fileMsg.FileName} {fileMsg.From} -> {fileMsg.To}",
+            Logger.Log($"SERVER: File delivered {fileMsg.FileName} {fileMsg.FromLogin} -> {fileMsg.To}",
                 Logger.LogLevel.Success);
         }
 
